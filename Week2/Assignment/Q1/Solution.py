@@ -1,3 +1,11 @@
+# filter_16.py
+# 
+# Implement the second-order recursive difference equation
+# y(n) = x(n) - a1 y(n-1) - a2 y(n-2)
+# 
+# 16 bit/sample
+
+from math import cos, pi 
 import pyaudio
 import struct
 
@@ -6,30 +14,24 @@ import struct
 Fs = 8000
 # Also try other values of 'Fs'. What happens? Why?
 
-T = 2       # T : Duration of audio to play (seconds)
+T = 1       # T : Duration of audio to play (seconds)
 N = T*Fs    # N : Number of samples to play
 
 # Difference equation coefficients
-a1_1 = -0.5
-a2_1 = 0.8
-
-a1_2 = -1.9
-a2_2 = 0.998
+a1 = -1.9
+a2 = 0.998
 
 # Initialization
-y1_1 = 0.0
-y2_1 = 0.0
-y1_2 = 0.0
-y2_2 = 0.0
-
-gain = 5000.0
+y1 = 0.0
+y2 = 0.0
+gain = 564654654.0
 # Also try other values of 'gain'. What is the effect?
 # gain = 20000.0
 
 # Create an audio object and open an audio stream for output
 p = pyaudio.PyAudio()
 stream = p.open(format = pyaudio.paInt16,  
-                channels = 2, 
+                channels = 1, 
                 rate = Fs,
                 input = False, 
                 output = True)
@@ -46,17 +48,21 @@ for n in range(0, N):
         x0 = 0.0
 
     # Difference equation
-    y0_1 = x0 - a1_1 * y1_1 - a2_1 * y2_1
-    y0_2 = x0 - a1_2 * y1_2 - a2_2 * y2_2
-    
-    # Delays
-    y2_1, y1_1 = y1_1, y0_1
-    y2_2, y1_2 = y1_2, y0_2
+    y0 = x0 - a1 * y1 - a2 * y2
 
+    # Delays
+    y2 = y1
+    y1 = y0
+
+    maxGain = ((2**15)/abs(y0)).__floor__() - 1
+    if(gain > maxGain):
+        print(y0,'/tmax gain:',maxGain)
+        gain = maxGain
+        
+        
     # Output
-    output_value_1 = gain * y0_1
-    output_value_2 = gain * y0_2
-    output_string = struct.pack('<hh', int(output_value_1), int(output_value_2))   # 'h' for 16 bits
+    output_value = gain * y0
+    output_string = struct.pack('h', int(output_value))   # 'h' for 16 bits
     stream.write(output_string)
 
 print("* Finished *")

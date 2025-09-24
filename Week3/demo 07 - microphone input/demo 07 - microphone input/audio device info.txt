@@ -1,0 +1,37 @@
+
+% python3
+
+Python 3.9.6 (v3.9.6:db3ff76da1, Jun 28 2021, 11:49:53) 
+[Clang 6.0 (clang-600.0.57)] on darwin
+Type "help", "copyright", "credits" or "license" for more information.
+
+>>> import pyaudio
+
+>>> p = pyaudio.PyAudio()
+
+>>> p.get_device_count()  # number of audio devices
+
+8
+
+>>> p.get_device_info_by_index(0)
+
+{'index': 0, 'structVersion': 2, 'name': 'Logitech USB Headset', 'hostApi': 0, 'maxInputChannels': 1, 'maxOutputChannels': 0, 'defaultLowInputLatency': 0.0057083333333333335, 'defaultLowOutputLatency': 0.01, 'defaultHighInputLatency': 0.015041666666666667, 'defaultHighOutputLatency': 0.1, 'defaultSampleRate': 48000.0}
+
+>>> info = p.get_device_info_by_index(0)
+
+>>> info['name']
+
+'Logitech USB Headset'
+
+>>> info['maxInputChannels']
+
+1
+
+>>> info['maxOutputChannels']
+
+0
+
+>>> info['defaultSampleRate']
+
+48000.0
+
