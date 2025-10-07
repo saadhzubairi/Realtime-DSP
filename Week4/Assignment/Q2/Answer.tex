@@ -1,0 +1,239 @@
+\documentclass[11pt]{article}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{listings}
+
+
+\topmargin=-0.45in
+\evensidemargin=0in
+\oddsidemargin=0in
+\textwidth=6.5in
+\textheight=9.0in
+\headsep=0.25in
+\renewcommand{\thesubsection}{\alph{subsection})}
+\renewcommand\lstlistingname{Snippet}
+\renewcommand\lstlistlistingname{}
+
+\usepackage{xcolor}
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codeorange}{rgb}{1,0.49,0}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.96}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegray},
+    keywordstyle=\color{codeorange},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codegreen},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    xleftmargin=10pt,
+}
+
+\lstset{style=mystyle}
+% Title and Author Customization
+
+% --------------------
+% Start from here
+% --------------------
+
+\title{
+    \vspace{3em}
+    \textbf{Digital Signal Processing Lab}\\
+    Demo 10 - Exercise 6 (Vibrato with non-sinusoidal LFO)
+    \vspace{1em}
+}
+\author{
+    Saad Zubairi \\ 
+    shz2020 \\
+    \vspace{1em}
+}
+\vspace{1em}
+\date{September 17th, 2025}
+
+\begin{document}
+\maketitle	
+
+\pagebreak
+
+% --------------------
+% Body
+% --------------------
+
+
+\section*{Solution}
+
+Solution Text
+
+% --------------------
+% Code Blocks example
+% --------------------
+
+\section*{Solution}
+In the solution, the sinusoidal LFO was replaced with a \textbf{triangle wave LFO}. 
+Apart from this, the program will now also \textbf{save the processed output signal as a WAV file}, while still playing the signal through the audio device. 
+
+\subsection*{Code Changes and Additions Made}
+Below are the changes and additions made to the original file.
+
+\begin{itemize}
+    \item Added code to open a new wave file for writing:
+    \begin{lstlisting}[language=python, caption={Open output wave file}]
+# Also save to file
+output_wav = wave.open("output_vibrato.wav", 'w')
+output_wav.setnchannels(1)
+output_wav.setsampwidth(2)
+output_wav.setframerate(RATE)
+    \end{lstlisting}
+    
+    \item Added a \textbf{triangle wave LFO} instead of sinusoid:
+    \begin{lstlisting}[language=python, caption={Triangle wave LFO}]
+# -------- LFO: Triangle wave instead of sinusoid --------
+phase = (n * f0 / RATE) % 1.0
+if phase < 0.5:
+    lfo = (phase * 4.0 - 1.0)   # -1 to +1 rising
+else:
+    lfo = (3.0 - phase * 4.0)   # +1 to -1 falling
+# --------------------------------------------------------
+kr = i1 + Wd * lfo
+    \end{lstlisting}
+    
+    \item Each computed output frame is now also written to the file:
+    \begin{lstlisting}[language=python, caption={Write frames to file}]
+output_wav.writeframes(output_bytes)
+    \end{lstlisting}
+    
+    \item Finally, closed the output file at the end:
+    \begin{lstlisting}[language=python, caption={Close output file}]
+output_wav.close()
+    \end{lstlisting}
+\end{itemize}
+\pagebreak
+\subsection*{Addendum: Full Code}
+    
+\begin{lstlisting}[language=python, caption={Full code}]
+# play_vibrato_interpolation.py
+# Reads a specified wave file (mono) and plays it with a vibrato effect.
+# (Time-varying delay using interpolation)
+# Modified: LFO is now a triangle wave, and output is saved as WAV
+
+import pyaudio
+import wave
+import struct
+import math
+from myfunctions import clip16
+
+# wavfile = 'decay_cosine_mono.wav'
+wavfile = 'author.wav'
+# wavfile = 'cosine_300_hz.wav'
+
+print('Play the wave file: %s.' % wavfile)
+
+# Open wave file
+wf = wave.open(wavfile, 'rb')
+
+# Read wave file properties
+RATE        = wf.getframerate()
+WIDTH       = wf.getsampwidth()
+LEN         = wf.getnframes()
+CHANNELS    = wf.getnchannels()
+
+print('The file has %d channel(s).'         % CHANNELS)
+print('The file has %d frames/second.'      % RATE)
+print('The file has %d frames.'             % LEN)
+print('The file has %d bytes per sample.'   % WIDTH)
+
+# Vibrato parameters
+f0 = 2          # LFO frequency in Hz
+W = 0.015       # Sweep width (seconds)
+Wd = W * RATE   # in samples
+
+# Buffer
+BUFFER_LEN = 1024
+buffer = BUFFER_LEN * [0]
+
+kr = 0
+i1 = kr
+kw = int(0.5 * BUFFER_LEN)
+
+print('The buffer is %d samples long.' % BUFFER_LEN)
+
+# Output stream
+p = pyaudio.PyAudio()
+stream = p.open(format      = pyaudio.paInt16,
+                channels    = 1,
+                rate        = RATE,
+                input       = False,
+                output      = True )
+
+# save to file
+output_wav = wave.open("output_vibrato.wav", 'w')
+output_wav.setnchannels(1)
+output_wav.setsampwidth(2)
+output_wav.setframerate(RATE)
+
+print ('* Playing...')
+
+for n in range(0, LEN):
+
+    input_bytes = wf.readframes(1)
+    x0, = struct.unpack('h', input_bytes)
+
+    kr_prev = int(math.floor(kr))
+    frac = kr - kr_prev
+    kr_next = kr_prev + 1
+    if kr_next == BUFFER_LEN:
+        kr_next = 0
+
+    y0 = (1-frac) * buffer[kr_prev] + frac * buffer[kr_next]
+
+    buffer[kw] = x0
+
+    # -------- LFO: Triangle wave instead of sinusoid --------
+    # Normalized phase: goes from 0 to 1 each cycle
+    phase = (n * f0 / RATE) % 1.0
+    if phase < 0.5:
+        lfo = (phase * 4.0 - 1.0)   # -1 to +1 rising
+    else:
+        lfo = (3.0 - phase * 4.0)   # +1 to -1 falling
+    # --------------------------------------------------------
+
+    kr = i1 + Wd * lfo
+    if kr >= BUFFER_LEN:
+        kr = kr - BUFFER_LEN
+    if kr < 0:
+        kr = kr + BUFFER_LEN
+
+    i1 = i1 + 1
+    if i1 >= BUFFER_LEN:
+        i1 = i1 - BUFFER_LEN
+
+    kw = kw + 1
+    if kw == BUFFER_LEN:
+        kw = 0
+
+    output_bytes = struct.pack('h', int(clip16(y0)))
+    stream.write(output_bytes)
+    output_wav.writeframes(output_bytes)
+
+print('* Finished')
+
+stream.stop_stream()
+stream.close()
+p.terminate()
+wf.close()
+output_wav.close()
+\end{lstlisting}
+
+\end{document}

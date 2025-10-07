@@ -1,0 +1,189 @@
+\documentclass[11pt]{article}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{listings}
+
+
+\topmargin=-0.45in
+\evensidemargin=0in
+\oddsidemargin=0in
+\textwidth=6.5in
+\textheight=9.0in
+\headsep=0.25in
+\renewcommand{\thesubsection}{\alph{subsection})}
+\renewcommand\lstlistingname{Snippet}
+\renewcommand\lstlistlistingname{}
+
+\usepackage{xcolor}
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codeorange}{rgb}{1,0.49,0}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.96}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegray},
+    keywordstyle=\color{codeorange},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codegreen},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    xleftmargin=10pt,
+}
+
+\lstset{style=mystyle}
+
+\title{
+    \vspace{3em}
+    \textbf{Digital Signal Processing Lab}\\
+    Demo 7 - Exercise 4 (Microphone AM)
+    \vspace{1em}
+}
+\author{
+    Saad Zubairi \\ 
+    shz2020 \\
+    \vspace{1em}
+}
+\vspace{1em}
+\date{\today}
+
+\begin{document}
+\maketitle	
+
+\pagebreak
+
+% --------------------
+% Body
+% --------------------
+
+
+\section*{Solution}
+
+In this solution, we modify the \texttt{mic\_filter.py} program so that instead of filtering the input microphone signal, it applies amplitude modulation at carrier frequency $f_0 = 400$ Hz. The resulting signal is
+\[
+y(t) = x(t)\cos(2\pi f_0 t),
+\]
+which is then played through the loudspeaker and is saved as a wav file.
+
+For this we made the following changes to the original code:
+
+\begin{itemize}
+    \item Removed the difference equation and replaced it with a cosine modulation at $f_0=400$ Hz:
+    \begin{lstlisting}[language=python, caption={AM modulation}]
+    # Amplitude modulation: y[n] = x[n] * cos(2*pi*f0*n/RATE)
+    modulation = math.cos(2.0*math.pi*f0*n/RATE)
+    y0 = x0 * modulation
+    \end{lstlisting}
+    \item Added code to save the output to a wave file:
+    \begin{lstlisting}[language=python, caption={Opening/writing output wav file stream}]
+    # Open output wave file
+    wf = wave.open('mic_am_400Hz.wav', 'wb')
+    wf.setnchannels(CHANNELS)
+    wf.setsampwidth(WIDTH)
+    wf.setframerate(RATE)
+    \end{lstlisting}
+    \begin{lstlisting}[language=python, caption={Writing bytes in the wav file}]
+    stream.write(output_bytes)
+    wf.writeframes(output_bytes)
+    \end{lstlisting}
+    \item Left the rest of the code (input, stream I/O, clip16, etc.) unchanged.
+\end{itemize}
+
+The generated audio has a metallic or robotic quality. The speech becomes less natural because its spectrum is mirrored around 400 Hz, creating a buzzy timbre.
+
+\pagebreak
+
+\section*{Full code}
+
+% --------------------
+% Code Blocks example
+% --------------------
+
+\begin{lstlisting}[language=python, label={lst:code}, breaklines=true, caption={example code}]
+import pyaudio
+import struct
+import math
+import wave
+
+def clip16( x ):    
+    # Clipping for 16 bits
+    if x > 32767:
+        x = 32767
+    elif x < -32768:
+        x = -32768
+    else:
+        x = x        
+    return (x)
+
+WIDTH       = 2         # Number of bytes per sample
+CHANNELS    = 1         # mono
+RATE        = 16000     # Sampling rate (frames/second)
+DURATION    = 6         # duration of processing (seconds)
+
+N = DURATION * RATE     # N : Number of samples to process
+
+f0 = 400.0              # Hz
+
+p = pyaudio.PyAudio()
+
+# Open audio stream
+stream = p.open(
+    format      = p.get_format_from_width(WIDTH),
+    channels    = CHANNELS,
+    rate        = RATE,
+    input       = True,
+    output      = True)
+
+# Open output wave file
+wf = wave.open('mic_400hz_output.wav', 'wb')
+wf.setnchannels(CHANNELS)
+wf.setsampwidth(WIDTH)
+wf.setframerate(RATE)
+
+print('* Start')
+
+for n in range(0,N):
+
+    # Get one frame from audio input (microphone)
+    input_bytes = stream.read(1)
+    # If you get run-time time input overflow errors, try:
+    # input_bytes = stream.read(1, exception_on_overflow = False)
+    
+    # Convert binary data to tuple of numbers
+    input_tuple = struct.unpack('h', input_bytes)
+    
+    # Convert one-element tuple to number
+    x0 = input_tuple[0]
+
+    # Amplitude modulation: y[n] = x[n] * cos(2*pi*f0*n/RATE)
+    modulation = math.cos(2.0*math.pi*f0*n/RATE)
+    y0 = x0 * modulation
+
+    # Clip and convert to int16
+    output_value = int(clip16(y0))
+    output_bytes = struct.pack('h', output_value)
+
+    # Play and save
+    stream.write(output_bytes)
+    wf.writeframes(output_bytes)
+
+print('* Finished')
+
+stream.stop_stream()
+stream.close()
+p.terminate()
+wf.close()
+
+\end{lstlisting}    
+    
+\end{document}
