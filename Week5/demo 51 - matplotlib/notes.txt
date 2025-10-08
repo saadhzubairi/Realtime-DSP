@@ -1,0 +1,45 @@
+
+
+Matplotlib is a library in Python
+Pyplot is a module within Matplotlib
+
+Websites about Matplotlib and Pyplot:
+
+https://matplotlib.org/
+https://matplotlib.org/tutorials/introductory/pyplot.html
+https://matplotlib.org/api/pyplot_summary.html
+https://matplotlib.org/stable/tutorials/introductory/quick_start.html
+
+pyplot_demo_01.py
+ - one plot
+pyplot_demo_02.py
+ - two graphs in one axis
+ - legend
+
+pyplot_demo_03.py
+ - specify line style, line width, markers in plot function
+ - specify axis limits
+
+pyplot_demo_04.py
+ - save figure as pdf file
+
+pyplot_demo_05.py
+ - set line parameters after initial plot function
+ - set_color() etc.
+
+pyplot_demo_06.py
+ - two graphs in one axis, set parameters after initial plot function
+
+pyplot_demo_07.py
+ - define labels after initial plot function and create legend
+
+pyplot_demo_08.py
+ - set data after initial plot function
+
+pyplot_demo_09.py
+ - update plot in a loop, use interactive mode
+
+pyplot_demo_10.py
+ - set figure size
+
+
