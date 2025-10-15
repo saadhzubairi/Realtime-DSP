@@ -1,0 +1,91 @@
+
+
+WORK IN PROGRES . . . 
+
+
+SEE THE PROGRAMS:
+
+numpy_notes.py
+
+plot_wire_gain_subplots_numpy.py
+
+--------------------------------------
+
+use numpy to simplify programs
+
+
+convert list to numpy array:
+
+>>> import numpy as np
+>>> a = [1, 2, 3]
+>>> type(a)
+<class 'list'>
+>>> b = np.array(a)
+>>> type(b)
+<class 'numpy.ndarray'>
+>>> b
+array([1, 2, 3])
+>>> 
+
+
+
+
+>>> n = np.arange(10)   # numpy array 0, 1, 2, ..., 9
+>>> n
+array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+>>> type(n)
+<class 'numpy.ndarray'>
+>>> type(n[0])
+<class 'numpy.int64'>
+>>> n.dtype
+dtype('int64')
+
+>>> n = np.arange(10, dtype = 'int16')   # numpy array 0, 1, 2, ..., 9
+>>> n
+array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], dtype=int16)
+>>> type(n)
+<class 'numpy.ndarray'>
+>>> type(n[0])
+<class 'numpy.int16'>
+>>> n.dtype
+dtype('int16')
+>>> 
+
+
+
+
+
+numpy is useful to replace loops by vector commands.
+
+	clipping
+
+	    output_block = np.clip(output_block, -MAXVALUE, MAXVALUE)
+
+
+	rounding to integer
+
+		output_block = np.around(output_block)  # rounds to closest integer.
+		or
+		output_block = np.rint(output_block)  # rounds to closest integer.
+
+
+Numpy can convert from binary date itself, so we do not need the unpack function. 
+We can use the frombuffer method instead of unpack:
+
+	signal_block = np.frombuffer(binary_data, dtype = 'int16')  # dtype must match audio stream format
+
+We can also use the tobytes method instead of the pack function to convert a number sequence to binary byte data.
+
+
+It is highly recommended to set frames_per_buffer to BLOCK LENGTH (or longer)
+ Set frames_per_buffer to BLOCK LENGTH to minimize latency, 
+ or longer to avoid audio dropouts
+
+
+
+Example Programs
+
+  wire program....
+
+
+
