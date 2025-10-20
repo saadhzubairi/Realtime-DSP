@@ -1,0 +1,11 @@
+
+Exercises - Karplus-Strong
+
+1) Implement the Karplus-Strong algorithm in real-time using Python and PyAudio. The output signal should be played to the speaker/headphone as it is computed. You should use a circular buffer in the implementation. Do not use the 'filter' function as in Matlab. Submit Python code that produces the output sound.
+
+2) Incorporate your real-time implementation of the Karplus-Strong (KS) algorithm into your keyboard program (Tkinter or CV2). Instead of generating notes using a second order difference equation (which has no harmonics) as we have done so far, you will use the KS method.  Then, the sound will be more natural.  The implementation should be done using a circular buffer since the KS method involves a system of high-order.
+
+
+
+
+
