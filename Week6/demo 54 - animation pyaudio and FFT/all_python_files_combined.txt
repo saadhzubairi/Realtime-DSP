@@ -1,0 +1,1182 @@
+===> combineAllPy.py
+from pathlib import Path
+from typing import List
+
+
+def read_text_with_fallback(file_path: Path) -> str:
+    """Read text using UTF-8, falling back to latin-1 if needed.
+
+    Some demo files may contain characters not valid in UTF-8 on Windows.
+    """
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return file_path.read_text(encoding="latin-1")
+
+
+def find_python_files(root_dir: Path) -> List[Path]:
+    """Return a sorted list of .py files under root_dir (recursively),
+    excluding common transient directories like __pycache__.
+    """
+    all_py_files = [
+        p for p in root_dir.rglob("*.py") if "__pycache__" not in p.parts
+    ]
+    # Sort by normalized POSIX-like path for stable, human-friendly ordering
+    return sorted(all_py_files, key=lambda p: p.as_posix().lower())
+
+
+def write_combined_text(root_dir: Path, py_files: List[Path], output_file: Path) -> None:
+    """Write all files into a single text file with headers:
+
+    ===> <relative_path>
+    <file content>
+    """
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with output_file.open("w", encoding="utf-8") as out_f:
+        for file_path in py_files:
+            rel_path = file_path.relative_to(root_dir).as_posix()
+            out_f.write(f"===> {rel_path}\n")
+            content = read_text_with_fallback(file_path)
+            out_f.write(content)
+            if not content.endswith("\n"):
+                out_f.write("\n")
+            out_f.write("\n")  # blank line between files
+
+
+def main() -> None:
+    # Use the directory that contains this script as the root to search
+    root_dir = Path(__file__).parent.resolve()
+    output_file = root_dir / "all_python_files_combined.txt"
+
+    py_files = find_python_files(root_dir)
+    write_combined_text(root_dir, py_files, output_file)
+    print(f"Wrote {len(py_files)} files to {output_file}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+===> myfunctions.py
+
+def clip16( x ):    
+    # Clipping for 16 bits
+    if x > 32767:
+        x = 32767
+    elif x < -32768:
+        x = -32768
+    else:
+        x = x        
+    return (x)
+
+
+===> prog_A1.py
+# plot_wave_file_and_play_using_animate.py
+
+import pyaudio
+import struct
+import wave
+import matplotlib
+from matplotlib import pyplot
+from matplotlib.animation import FuncAnimation
+
+matplotlib.use('TkAgg')
+# matplotlib.use('MacOSX')      # Optional if using Mac OSX
+
+print('The matplotlib backend is %s' % pyplot.get_backend())  # The backend used plotting
+
+# Specify wave file
+wavfile = 'author.wav'
+# wavfile = 'sines.wav'
+print('Name of wave file: %s' % wavfile)
+
+# Open wave file
+wf = wave.open( wavfile, 'rb')
+
+# Read wave file properties
+RATE        = wf.getframerate()     # Frame rate (frames/second)
+WIDTH       = wf.getsampwidth()     # Number of bytes per sample
+LEN         = wf.getnframes()       # Signal length
+CHANNELS    = wf.getnchannels()     # Number of channels
+
+print('The file has %d channel(s).'         % CHANNELS)
+print('The file has %d frames/second.'      % RATE)
+print('The file has %d frames.'             % LEN)
+print('The file has %d bytes per sample.'   % WIDTH)
+
+# Block length (number of frames per block)
+BLOCKLEN = 256
+# BLOCKLEN = 128
+# BLOCKLEN = 64
+# ? ? How short can you make the block without having audible artifacts ?
+
+Num_Plots = int(LEN/BLOCKLEN) - 1
+print('Number of frames = ', Num_Plots)
+
+
+# Open the audio output stream
+p = pyaudio.PyAudio()
+
+PA_FORMAT = p.get_format_from_width(WIDTH)
+stream = p.open(
+    format = PA_FORMAT,
+    channels = CHANNELS,
+    rate = RATE,
+    input = False,
+    output = True,
+    frames_per_buffer = BLOCKLEN)   # optional, but can help to reduce latency
+
+# Set up plotting...
+
+fig1 = pyplot.figure(1)
+ax1 = fig1.add_subplot(1, 1, 1)
+[g1] = ax1.plot([], [])
+
+def my_init():
+    print('hello')
+    g1.set_xdata(range(BLOCKLEN))
+    g1.set_ydata(BLOCKLEN * [0])
+    ax1.set_ylim(-32000, 32000)
+    ax1.set_xlim(0, BLOCKLEN)
+    return (g1,)
+
+def my_update(i):
+    # Get block of samples from wave file
+    input_bytes = wf.readframes(BLOCKLEN)
+    
+    # Convert binary data to number sequence (tuple)
+    signal_block = struct.unpack('h' * BLOCKLEN, input_bytes)
+
+    g1.set_ydata(signal_block)
+
+    # Write binary data to audio output stream
+    stream.write(input_bytes, BLOCKLEN)
+
+    return (g1,)
+
+
+my_anima = FuncAnimation(
+    fig1,
+    my_update,
+    frames = Num_Plots,
+    init_func = my_init,
+    interval = 10,   # milliseconds (what happens if this is 200?)
+    blit = True,
+    repeat = False
+)
+pyplot.show()   # Needed for FuncAnimation to show plots
+
+stream.stop_stream()
+stream.close()
+p.terminate()
+wf.close()
+
+print('* Finished')
+
+
+
+===> prog_A2.py
+# plot_play_file_loop_with_animate_numpy.py
+
+import pyaudio
+import wave
+import matplotlib
+from matplotlib import pyplot
+from matplotlib import animation
+import numpy as np
+
+matplotlib.use('TkAgg')
+# matplotlib.use('MacOSX')
+
+print('The matplotlib backend is %s' % pyplot.get_backend())      # Plotting backend
+
+# Specify wave file
+wavfile = 'author.wav'
+# wavfile = 'sines.wav'
+print('Name of wave file: %s' % wavfile)
+
+# Open wave file
+wf = wave.open( wavfile, 'rb')
+
+# Read wave file properties
+RATE        = wf.getframerate()     # Frame rate (frames/second)
+WIDTH       = wf.getsampwidth()     # Number of bytes per sample
+LEN         = wf.getnframes()       # Signal length
+CHANNELS    = wf.getnchannels()     # Number of channels
+
+print('The file has %d channel(s).'         % CHANNELS)
+print('The file has %d frames/second.'      % RATE)
+print('The file has %d frames.'             % LEN)
+print('The file has %d bytes per sample.'   % WIDTH)
+
+BLOCKLEN = 256
+# BLOCKLEN = 128
+# BLOCKLEN = 64
+# BLOCKLEN = 32
+# BLOCKLEN = 8
+
+BLOCK_DURATION = 1000.0 * BLOCKLEN/RATE # duration in milliseconds
+print('Block length: %d' % BLOCKLEN)
+print('Duration of block in milliseconds: %.2f' % BLOCK_DURATION)
+
+# Open the audio output stream
+p = pyaudio.PyAudio()
+
+PA_FORMAT = p.get_format_from_width(WIDTH)
+stream = p.open(
+    format = PA_FORMAT,
+    channels = CHANNELS,
+    rate = RATE,
+    input = False,
+    output = True,
+    frames_per_buffer = BLOCKLEN)
+
+# Create figure, ...
+
+fig1 = pyplot.figure(1)
+ax1 = fig1.add_subplot(1, 1, 1)
+[g1] = ax1.plot([], [])
+
+# Define animation functions
+
+def my_init():
+    g1.set_xdata(range(BLOCKLEN))
+    ax1.set_ylim(-32000, 32000)
+    ax1.set_xlim(0, BLOCKLEN)
+    ax1.set_xlabel('Time (index)')
+    ax1.set_title('Signal')
+    return (g1,)
+
+def my_update(i):
+
+    # Get block of samples from wave file
+    input_bytes = wf.readframes(BLOCKLEN)
+
+    # Rewind if at end of file
+    if len(input_bytes) < WIDTH * BLOCKLEN:
+        wf.rewind()
+        input_bytes = wf.readframes(BLOCKLEN)
+
+    # Convert binary data to number sequence (numpy array)
+    signal_block = np.frombuffer(input_bytes, dtype = 'int16')
+
+    # Update graph
+    g1.set_ydata(signal_block)
+
+    # Write binary data to audio output stream
+    stream.write(input_bytes, BLOCKLEN)
+
+    return (g1,)
+
+
+my_anima = animation.FuncAnimation(
+    fig1,
+    my_update,
+    init_func = my_init,
+    interval = 10,   # milliseconds (what happens if this is 200?)
+    blit = True,
+    cache_frame_data = False,
+    repeat = False
+)
+pyplot.show()   # Needed for FuncAnimation to show plots
+
+stream.stop_stream()
+stream.close()
+p.terminate()
+
+wf.close()
+
+print('* Finished')
+
+
+
+===> prog_A3.py
+# plot_play_file_loop_with_animate_numpy_spectrum.py
+
+import pyaudio
+import wave
+import matplotlib
+from matplotlib import pyplot
+from matplotlib import animation
+import numpy as np
+# from scipy.signal import butter, lfilter, freqz
+
+matplotlib.use('TkAgg')
+# matplotlib.use('MacOSX')
+
+print('The matplotlib backend is %s' % pyplot.get_backend())      # Plotting backend
+
+# Specify wave file
+wavfile = 'author.wav'
+# wavfile = 'sines.wav'
+print('Name of wave file: %s' % wavfile)
+
+# Open wave file
+wf = wave.open( wavfile, 'rb')
+
+# Read wave file properties
+RATE        = wf.getframerate()     # Frame rate (frames/second)
+WIDTH       = wf.getsampwidth()     # Number of bytes per sample
+LEN         = wf.getnframes()       # Signal length
+CHANNELS    = wf.getnchannels()     # Number of channels
+
+print('The file has %d channel(s).'         % CHANNELS)
+print('The file has %d frames/second.'      % RATE)
+print('The file has %d frames.'             % LEN)
+print('The file has %d bytes per sample.'   % WIDTH)
+
+BLOCKLEN = 256
+# BLOCKLEN = 128
+# BLOCKLEN = 64
+# BLOCKLEN = 32
+# BLOCKLEN = 8
+
+BLOCK_DURATION = 1000.0 * BLOCKLEN/RATE # duration in milliseconds
+print('Block length: %d' % BLOCKLEN)
+print('Duration of block in milliseconds: %.2f' % BLOCK_DURATION)
+
+# Open the audio output stream
+p = pyaudio.PyAudio()
+
+PA_FORMAT = p.get_format_from_width(WIDTH)
+stream = p.open(
+    format = PA_FORMAT,
+    channels = CHANNELS,
+    rate = RATE,
+    input = False,
+    output = True,
+    frames_per_buffer = BLOCKLEN)
+
+# Create figure, ...
+
+fig1 = pyplot.figure(1)
+fig1.set_size_inches((5, 6))  # (width, height)
+
+ax_x = fig1.add_subplot(2, 1, 1)
+ax_X = fig1.add_subplot(2, 1, 2)
+
+x = np.zeros(BLOCKLEN)              # signal
+X = np.fft.rfft(x)                  # frequency spectrum of signal (real fft)
+
+n = np.arange(BLOCKLEN)             # Time axis
+f_X = np.arange(X.size) / BLOCKLEN  # frequency axis
+
+# signal plot
+[g_x] = ax_x.plot([], [])
+ax_x.set_ylim(-32000, 32000)
+ax_x.set_xlim(0, BLOCKLEN)
+ax_x.set_xlabel('Time (index)')
+ax_x.set_title('Signal')
+
+# Frequency spectrum plot
+# [g_X] = ax_X.plot(f_X, np.abs(X))
+[g_X] = ax_X.plot([], [])
+ax_X.set_xlim(0, 0.5)
+ax_X.set_ylim(0, 1000)
+ax_X.set_title('Frequency spectrum')
+ax_X.set_xlabel('Frequency (normalized)')
+
+fig1.tight_layout()
+
+
+# Define animation functions
+
+def my_init():
+    g_x.set_xdata(n)
+    g_X.set_xdata(f_X)
+    return (g_x, g_X)
+
+def my_update(i):
+
+    global states
+
+    # Get block of samples from wave file
+    signal_bytes = wf.readframes(BLOCKLEN)
+
+    # Rewind if at end of file
+    if len(signal_bytes) < WIDTH * BLOCKLEN:
+        wf.rewind()
+        signal_bytes = wf.readframes(BLOCKLEN)
+
+    # Convert binary data to number sequence (numpy array)
+    x = np.frombuffer(signal_bytes, dtype = 'int16')
+
+    # Compute frequency spectrum
+    X = np.fft.rfft(x) / BLOCKLEN
+
+    # Update graphs
+    g_x.set_ydata(x)
+    g_X.set_ydata(np.abs(X))
+
+    # Convert to binary data, write to audio output stream
+    stream.write(signal_bytes, BLOCKLEN)
+
+    return (g_x, g_X)
+
+
+my_anima = animation.FuncAnimation(
+    fig1,
+    my_update,
+    init_func = my_init,
+    interval = 10,   # milliseconds (what happens if this is 200?)
+    blit = True,
+    cache_frame_data = False,
+    repeat = False
+)
+pyplot.show()   # Needed for FuncAnimation to show plots
+
+stream.stop_stream()
+stream.close()
+p.terminate()
+
+wf.close()
+
+print('* Finished')
+
+
+
+===> prog_A4.py
+# plot_play_file_loop_with_animate_numpy_filter.py
+
+import pyaudio
+import wave
+import matplotlib
+from matplotlib import pyplot
+from matplotlib import animation
+import numpy as np
+from scipy.signal import butter, lfilter, freqz
+
+matplotlib.use('TkAgg')
+# matplotlib.use('MacOSX')
+
+print('The matplotlib backend is %s' % pyplot.get_backend())      # Plotting backend
+
+# Specify wave file
+wavfile = 'author.wav'
+# wavfile = 'sines.wav'
+print('Name of wave file: %s' % wavfile)
+
+# Open wave file
+wf = wave.open( wavfile, 'rb')
+
+# Read wave file properties
+RATE        = wf.getframerate()     # Frame rate (frames/second)
+WIDTH       = wf.getsampwidth()     # Number of bytes per sample
+LEN         = wf.getnframes()       # Signal length
+CHANNELS    = wf.getnchannels()     # Number of channels
+
+print('The file has %d channel(s).'         % CHANNELS)
+print('The file has %d frames/second.'      % RATE)
+print('The file has %d frames.'             % LEN)
+print('The file has %d bytes per sample.'   % WIDTH)
+
+BLOCKLEN = 256
+# BLOCKLEN = 128
+# BLOCKLEN = 64
+# BLOCKLEN = 32
+# BLOCKLEN = 8
+
+BLOCK_DURATION = 1000.0 * BLOCKLEN/RATE # duration in milliseconds
+print('Block length: %d' % BLOCKLEN)
+print('Duration of block in milliseconds: %.2f' % BLOCK_DURATION)
+
+# Open the audio output stream
+p = pyaudio.PyAudio()
+
+PA_FORMAT = p.get_format_from_width(WIDTH)
+stream = p.open(
+    format = PA_FORMAT,
+    channels = CHANNELS,
+    rate = RATE,
+    input = False,
+    output = True,
+    frames_per_buffer = BLOCKLEN)
+
+# Create Butterworth filter
+
+ORDER = 3   # filter order
+fc = 0.05
+# [b, a] = butter(ORDER, 2 * fc)
+[b, a] = butter(ORDER, 2 * fc, btype = 'high')
+[om, H] = freqz(b, a)
+f = om/(2 * np.pi) * RATE
+states = np.zeros(ORDER)
+
+# Create figure, ...
+
+fig1 = pyplot.figure(1)
+fig1.set_size_inches((6, 8))  # (width, height)
+
+ax_x = fig1.add_subplot(3, 1, 1)
+ax_H = fig1.add_subplot(3, 1, 2)
+ax_y = fig1.add_subplot(3, 1, 3)
+
+# Input signal plot
+[g_x] = ax_x.plot([], [])
+ax_x.set_ylim(-32000, 32000)
+ax_x.set_xlim(0, 1000 * BLOCKLEN / RATE)
+ax_x.set_xlabel('Time (msec)')
+ax_x.set_title('Input signal')
+
+# Frequency response plot
+[g_H] = ax_H.plot(f, np.abs(H))
+ax_H.set_xlim(0, RATE / 2)
+ax_H.set_ylim(0, 1.2)
+ax_H.set_title('Frequency response')
+ax_H.set_xlabel('Frequency (Hz)')
+
+# Output signal plot
+[g_y] = ax_y.plot([], [])
+ax_y.set_ylim(-32000, 32000)
+ax_y.set_xlim(0, 1000 * BLOCKLEN / RATE)
+ax_y.set_xlabel('Time (msec)')
+ax_y.set_title('Output signal')
+
+fig1.tight_layout()
+
+
+# Define animation functions
+
+def my_init():
+    t = np.arange(BLOCKLEN) * (1000/RATE)   # time axis (milliseconds)
+    g_x.set_xdata(t)
+    g_y.set_xdata(t)
+    return (g_x, g_y)
+
+def my_update(i):
+
+    global states
+
+    # Get block of samples from wave file
+    input_bytes = wf.readframes(BLOCKLEN)
+
+    # Rewind if at end of file
+    if len(input_bytes) < WIDTH * BLOCKLEN:
+        wf.rewind()
+        input_bytes = wf.readframes(BLOCKLEN)
+
+    # Convert binary data to number sequence (numpy array)
+    x = np.frombuffer(input_bytes, dtype = 'int16')
+
+    [y, states] = lfilter(b, a, x, zi = states)
+
+    # Update graphs
+    g_x.set_ydata(x)
+    g_y.set_ydata(y)
+
+    # Convert to binary data, write to audio output stream
+    stream.write(y.astype('int16').tobytes(), BLOCKLEN)
+
+    return (g_x, g_y)
+
+
+my_anima = animation.FuncAnimation(
+    fig1,
+    my_update,
+    init_func = my_init,
+    interval = 10,   # milliseconds (what happens if this is 200?)
+    blit = True,
+    cache_frame_data = False,
+    repeat = False
+)
+pyplot.show()   # Needed for FuncAnimation to show plots
+
+stream.stop_stream()
+stream.close()
+p.terminate()
+
+wf.close()
+
+print('* Finished')
+
+===> prog_A5.py
+# plot_play_file_loop_with_animate_numpy_filter_spectrum_ver2.py
+
+# This version uses milliseconds and Hz for axes
+
+import pyaudio
+import wave
+import matplotlib
+from matplotlib import pyplot
+from matplotlib import animation
+import numpy as np
+from scipy.signal import butter, lfilter, freqz
+
+matplotlib.use('TkAgg')
+# matplotlib.use('MacOSX')
+
+print('The matplotlib backend is %s' % pyplot.get_backend())      # Plotting backend
+
+# Specify wave file
+wavfile = 'author.wav'
+# wavfile = 'sines.wav'
+print('Name of wave file: %s' % wavfile)
+
+# Open wave file
+wf = wave.open( wavfile, 'rb')
+
+# Read wave file properties
+RATE        = wf.getframerate()     # Frame rate (frames/second)
+WIDTH       = wf.getsampwidth()     # Number of bytes per sample
+LEN         = wf.getnframes()       # Signal length
+CHANNELS    = wf.getnchannels()     # Number of channels
+
+print('The file has %d channel(s).'         % CHANNELS)
+print('The file has %d frames/second.'      % RATE)
+print('The file has %d frames.'             % LEN)
+print('The file has %d bytes per sample.'   % WIDTH)
+
+# BLOCKLEN = 512
+BLOCKLEN = 256
+# BLOCKLEN = 128
+# BLOCKLEN = 64
+# BLOCKLEN = 32
+# BLOCKLEN = 8
+
+BLOCK_DURATION = 1000.0 * BLOCKLEN/RATE # duration in milliseconds
+print('Block length: %d' % BLOCKLEN)
+print('Duration of block in milliseconds: %.2f' % BLOCK_DURATION)
+
+# Open the audio output stream
+p = pyaudio.PyAudio()
+
+PA_FORMAT = p.get_format_from_width(WIDTH)
+stream = p.open(
+    format = PA_FORMAT,
+    channels = CHANNELS,
+    rate = RATE,
+    input = False,
+    output = True,
+    frames_per_buffer = BLOCKLEN)
+
+# Create Butterworth filter
+
+ORDER = 3   # filter order
+fc = 0.1
+# [b, a] = butter(ORDER, 2 * fc) # low-pass filter
+[b, a] = butter(ORDER, 2 * fc, btype = 'high')    # high-pass filter
+[om, H] = freqz(b, a)
+f_H = om/(2 * np.pi) * RATE   # units of Hz
+states = np.zeros(ORDER)
+
+# Create figure, ...
+
+fig1 = pyplot.figure(1)
+fig1.set_size_inches((12, 7))  # (width, height)
+
+ax_x = fig1.add_subplot(2, 2, 1)
+ax_X = fig1.add_subplot(2, 2, 2)
+ax_y = fig1.add_subplot(2, 2, 3)
+ax_Y = fig1.add_subplot(2, 2, 4)
+
+t = np.arange(BLOCKLEN) * (1000/RATE)   # time axis (milliseconds)
+x = np.zeros(BLOCKLEN)                  # signal
+X = np.fft.rfft(x)                      # spectrum of signal (real fft)
+f_X = np.arange(X.size) * RATE/BLOCKLEN # frequency axis
+
+# Input signal plot
+[g_x] = ax_x.plot([], [])
+ax_x.set_ylim(-32000, 32000)
+ax_x.set_xlim(0, 1000 * BLOCKLEN/RATE)
+ax_x.set_xlabel('Time (milliseconds)')
+ax_x.set_title('Input signal')
+
+# Input spectrum plot
+[g_X] = ax_X.plot([], [])
+[g_H] = ax_X.plot(f_H, 500 * np.abs(H), label = 'Frequency response (x500)', color = 'green')
+ax_X.set_xlim(0, RATE/2)
+ax_X.set_ylim(0, 1000)
+ax_X.set_title('Spectrum of input signal')
+ax_X.set_xlabel('Frequency (Hz)')
+ax_X.legend()
+
+# Output signal plot
+[g_y] = ax_y.plot([], [])
+ax_y.set_ylim(-32000, 32000)
+ax_y.set_xlim(0, 1000 * BLOCKLEN/RATE)
+ax_y.set_xlabel('Time (milliseconds)')
+ax_y.set_title('Output signal')
+
+# Output spectrum plot
+[g_Y] = ax_Y.plot([], [])
+ax_Y.set_xlim(0, RATE/2)
+ax_Y.set_ylim(0, 1000)
+ax_Y.set_title('Spectrum of output signal')
+ax_Y.set_xlabel('Frequency (Hz)')
+
+fig1.tight_layout()
+
+
+# Define animation functions
+
+def my_init():
+    g_x.set_xdata(t)
+    g_x.set_ydata(x)
+    g_y.set_xdata(t)
+    g_y.set_ydata(x)
+    g_X.set_xdata(f_X)
+    g_X.set_ydata( np.abs(X) )
+    g_Y.set_xdata(f_X)
+    g_Y.set_ydata( np.abs(X) )
+    return (g_x, g_y, g_X, g_Y)
+
+def my_update(i):
+
+    global states
+
+    # Get block of samples from wave file
+    input_bytes = wf.readframes(BLOCKLEN)
+
+    # Rewind if at end of file
+    if len(input_bytes) < WIDTH * BLOCKLEN:
+        wf.rewind()
+        input_bytes = wf.readframes(BLOCKLEN)
+
+    # Convert binary data to number sequence (numpy array)
+    x = np.frombuffer(input_bytes, dtype = 'int16')
+
+    [y, states] = lfilter(b, a, x, zi = states)
+
+    # Compute frequency spectra
+    X = np.fft.rfft(x) / BLOCKLEN
+    Y = np.fft.rfft(y) / BLOCKLEN
+
+    # Update graphs
+    g_x.set_ydata(x)
+    g_y.set_ydata(y)
+    g_X.set_ydata( np.abs(X) )
+    g_Y.set_ydata( np.abs(Y) )
+
+    # Convert to binary data, write to audio output stream
+    stream.write(y.astype('int16').tobytes(), BLOCKLEN)
+
+    return (g_x, g_y, g_X, g_Y)
+
+
+my_anima = animation.FuncAnimation(
+    fig1,
+    my_update,
+    init_func = my_init,
+    interval = 10,   # milliseconds (what happens if this is 100?)
+    blit = True,
+    cache_frame_data = False,
+    repeat = False
+)
+pyplot.show()   # Needed for FuncAnimation to show plots
+
+stream.stop_stream()
+stream.close()
+p.terminate()
+
+wf.close()
+
+print('* Finished')
+
+===> prog_B1.py
+# plot_microphone_input_using_function.py
+
+import pyaudio
+import matplotlib
+from matplotlib import pyplot
+from matplotlib import animation
+import numpy as np
+
+# matplotlib.use('TkAgg')
+matplotlib.use('MacOSX')
+
+print('The matplotlib backend is %s' % pyplot.get_backend())      # Plotting backend
+
+
+WIDTH = 2           # bytes per sample
+CHANNELS = 1        # mono
+RATE = 8000         # frames per second
+BLOCKLEN = 512     # block length in samples
+
+print('Block length: %d' % BLOCKLEN)
+print('Duration of block in milliseconds: %.1f' % (1000.0 * BLOCKLEN/RATE))
+
+
+# Open the audio stream
+
+p = pyaudio.PyAudio()
+PA_FORMAT = p.get_format_from_width(WIDTH)
+stream = p.open(
+    format = PA_FORMAT,
+    channels = CHANNELS,
+    rate = RATE,
+    input = True,
+    output = False,
+    frames_per_buffer = BLOCKLEN)   # optional, but can help to reduce latency
+
+
+# Set up plotting...
+
+my_fig = pyplot.figure(1)
+ax1 = my_fig.add_subplot(1, 1, 1)
+
+t = np.arange(BLOCKLEN) * (1000/RATE)   # time axis (milliseconds)
+
+[g1] = ax1.plot([], [])                 # Create empty axis
+ax1.set_xlim(0, 1000 * BLOCKLEN/RATE)   # set x-axis limits
+ax1.set_ylim(-10000, 10000)             # set y-axis limits
+ax1.set_xlabel('Time (msec)')
+
+# Define animation functions
+
+def my_init():
+    g1.set_xdata(t)                   # x-data of plot (discrete-time)
+    return (g1,)
+
+def my_update(i):
+
+    # Read audio input stream
+    signal_bytes = stream.read(BLOCKLEN, exception_on_overflow = False)
+
+    # Convert binary data to number sequence (numpy array)
+    signal_block = np.frombuffer(signal_bytes, dtype = 'int16')
+
+    g1.set_ydata(signal_block)   # Update y-data of plot
+
+    return (g1,)
+
+
+# Read microphone, plot audio signal
+
+my_anima = animation.FuncAnimation(
+    my_fig,
+    my_update,
+    init_func = my_init,
+    interval = 10,   # milliseconds (what happens if this is 200?)
+    blit = True,
+    cache_frame_data=False,
+    repeat = False
+)
+pyplot.show()   # Needed for FuncAnimation to show plots
+
+stream.stop_stream()
+stream.close()
+p.terminate()
+
+print('* Finished')
+
+===> prog_B2.py
+# plot_microphone_input_using_animate_spectrum.py
+
+import pyaudio
+import matplotlib
+from matplotlib import pyplot
+from matplotlib import animation
+import numpy as np
+
+matplotlib.use('TkAgg')
+# matplotlib.use('MacOSX')
+
+print('The matplotlib backend is %s' % pyplot.get_backend())      # Plotting backend
+
+
+WIDTH = 2           # bytes per sample
+CHANNELS = 1        # mono
+RATE = 8000         # frames per second
+BLOCKLEN = 512     # block length in samples
+
+print('Block length: %d' % BLOCKLEN)
+print('Duration of block in milliseconds: %.1f' % (1000.0 * BLOCKLEN/RATE))
+
+# Open the audio stream
+
+p = pyaudio.PyAudio()
+PA_FORMAT = p.get_format_from_width(WIDTH)
+stream = p.open(
+    format = PA_FORMAT,
+    channels = CHANNELS,
+    rate = RATE,
+    input = True,
+    output = False,
+    frames_per_buffer = BLOCKLEN)   # optional, but can help to reduce latency
+
+
+# Set up plotting...
+
+my_fig = pyplot.figure(1)
+ax1 = my_fig.add_subplot(2, 1, 1)
+ax2 = my_fig.add_subplot(2, 1, 2)
+
+t = np.arange(BLOCKLEN) * (1000/RATE)   # time axis (milliseconds)
+x = np.zeros(BLOCKLEN)                  # signal
+X = np.fft.rfft(x)                          # frequency spectrum of signal (real fft)
+f_X = np.arange(X.size) * RATE/BLOCKLEN     # frequency axis
+
+# signal plot
+[g1] = ax1.plot([], [])                 # Create empty axis
+ax1.set_xlim(0, 1000 * BLOCKLEN/RATE)   # set x-axis limits
+ax1.set_ylim(-10000, 10000)             # set y-axis limits
+ax1.set_xlabel('Time (msec)')
+ax1.set_title('Signal')
+
+# Frequency spectrum plot
+[g2] = ax2.plot([], [])                 # Create empty axis
+
+ax2.set_xlim(0, RATE/2)
+ax2.set_ylim(0, 1000)
+ax2.set_title('Frequency spectrum')
+ax2.set_xlabel('Frequency (Hz)')
+
+my_fig.tight_layout()
+
+
+# Define animation functions
+
+def my_init():
+    g1.set_xdata(t)                   # x-data of plot
+    g2.set_xdata(f_X)
+    return (g1, g2)
+
+def my_update(i):
+
+    # Read audio input stream
+    signal_bytes = stream.read(BLOCKLEN, exception_on_overflow = False)
+
+    # Convert binary data to number sequence (numpy array)
+    signal_block = np.frombuffer(signal_bytes, dtype = 'int16')
+
+    # Compute frequency spectrum
+    X = np.fft.rfft(signal_block) / BLOCKLEN
+
+    g1.set_ydata(signal_block)
+    g2.set_ydata(np.abs(X))
+
+    return (g1, g2)
+
+
+# Read microphone, plot audio signal
+
+my_anima = animation.FuncAnimation(
+    my_fig,
+    my_update,
+    init_func = my_init,
+    interval = 10,   # milliseconds (what happens if this is 200?)
+    blit = True,
+    cache_frame_data = False,
+    repeat = False
+)
+pyplot.show()   # Needed for FuncAnimation to show plots
+
+stream.stop_stream()
+stream.close()
+p.terminate()
+
+print('* Finished')
+
+===> prog_B3.py
+# plot_microphone_input_using_animate_play.py
+
+import pyaudio
+import matplotlib
+from matplotlib import pyplot
+from matplotlib import animation
+import numpy as np
+
+matplotlib.use('TkAgg')
+# matplotlib.use('MacOSX')
+
+print('The matplotlib backend is %s' % pyplot.get_backend())      # Plotting backend
+
+
+WIDTH = 2           # bytes per sample
+CHANNELS = 1        # mono
+RATE = 8000         # frames per second
+
+# block length in samples
+# BLOCKLEN = 512
+BLOCKLEN = 256
+# BLOCKLEN = 128
+
+print('Block length: %d' % BLOCKLEN)
+print('Duration of block in milliseconds: %.1f' % (1000.0 * BLOCKLEN/RATE))
+
+print('Press q to quit')
+
+
+# Open the audio stream
+
+p = pyaudio.PyAudio()
+PA_FORMAT = p.get_format_from_width(WIDTH)
+stream = p.open(
+    format = PA_FORMAT,
+    channels = CHANNELS,
+    rate = RATE,
+    input = True,
+    output = True,
+    frames_per_buffer = BLOCKLEN)   # optional, but can help to reduce latency
+
+
+# Create figure
+
+my_fig = pyplot.figure(1)
+ax1 = my_fig.add_subplot(1, 1, 1)
+
+t = np.arange(BLOCKLEN) * (1000/RATE)   # time axis (milliseconds)
+
+[g1] = ax1.plot([], [])                 # Create empty axis
+ax1.set_xlim(0, 1000 * BLOCKLEN/RATE)   # set x-axis limits
+ax1.set_ylim(-10000, 10000)             # set y-axis limits
+ax1.set_xlabel('Time (msec)')
+ax1.set_title('Signal')
+
+# Define animation functions
+
+def my_init():
+    g1.set_xdata(t)                   # x-data of plot (discrete-time)
+    return (g1,)
+
+def my_update(i):
+
+    # Read audio input stream
+    signal_bytes = stream.read(BLOCKLEN, exception_on_overflow = False)
+
+    # Convert binary data to number sequence (numpy array)
+    signal_block = np.frombuffer(signal_bytes, dtype = 'int16')
+
+    g1.set_ydata(signal_block)   # Update y-data of plot
+
+    # Convert to binary data, write to audio output stream
+    stream.write(signal_block.astype('int16').tobytes(), BLOCKLEN)
+
+    return (g1,)
+
+
+# Read microphone, plot audio signal
+
+my_anima = animation.FuncAnimation(
+    my_fig,
+    my_update,
+    init_func = my_init,
+    interval = 10,   # milliseconds (what happens if this is 200?)
+    blit = True,
+    cache_frame_data = False,
+    repeat = False
+)
+pyplot.show()   # start animation
+
+stream.stop_stream()
+stream.close()
+p.terminate()
+
+print('* Finished')
+
+===> prog_B4.py
+# demo_12.py
+
+# demo_12 output audio    numpy   spectrum    time & freq
+
+import pyaudio
+import matplotlib
+from matplotlib import pyplot
+from matplotlib import animation
+import numpy as np
+
+matplotlib.use('TkAgg')
+# matplotlib.use('MacOSX')
+
+print('The matplotlib backend is %s' % pyplot.get_backend())      # Plotting backend
+
+
+WIDTH = 2           # bytes per sample
+CHANNELS = 1        # mono
+RATE = 8000         # frames per second
+
+# block length in samples
+BLOCKLEN = 512     
+BLOCKLEN = 256
+
+print('Block length: %d' % BLOCKLEN)
+print('Duration of block in milliseconds: %.1f' % (1000.0 * BLOCKLEN/RATE))
+
+# Open the audio stream
+
+p = pyaudio.PyAudio()
+PA_FORMAT = p.get_format_from_width(WIDTH)
+stream = p.open(
+    format = PA_FORMAT,
+    channels = CHANNELS,
+    rate = RATE,
+    input = True,
+    output = True,
+    frames_per_buffer = BLOCKLEN)   # optional, but can help to reduce latency
+
+
+# Set up plots
+
+my_fig = pyplot.figure(1)
+ax1 = my_fig.add_subplot(2, 1, 1)
+ax2 = my_fig.add_subplot(2, 1, 2)
+
+t = np.arange(BLOCKLEN) * (1000/RATE)   # time axis (milliseconds)
+x = np.zeros(BLOCKLEN)                  # signal
+X = np.fft.rfft(x)                          # frequency spectrum of signal (real fft)
+f_X = np.arange(X.size) * RATE/BLOCKLEN     # frequency axis
+
+# signal plot
+[g1] = ax1.plot([], [])                 # Create empty axis
+ax1.set_xlim(0, 1000 * BLOCKLEN/RATE)   # set x-axis limits
+ax1.set_ylim(-10000, 10000)             # set y-axis limits
+ax1.set_xlabel('Time (msec)')
+ax1.set_title('Signal')
+
+# Frequency spectrum plot
+[g2] = ax2.plot([], [])                 # Create empty axis
+
+ax2.set_xlim(0, RATE/2)
+ax2.set_ylim(0, 1000)
+ax2.set_title('Frequency spectrum')
+ax2.set_xlabel('Frequency (Hz)')
+
+my_fig.tight_layout()
+
+
+# Define animation functions
+
+def my_init():
+    g1.set_xdata(t)                   # x-data of plot
+    g2.set_xdata(f_X)
+    return (g1, g2)
+
+def my_update(i):
+
+    # Read audio input stream
+    signal_bytes = stream.read(BLOCKLEN, exception_on_overflow = False)
+
+    # Convert binary data to number sequence (numpy array)
+    signal_block = np.frombuffer(signal_bytes, dtype = 'int16')
+
+    # Compute frequency spectrum
+    X = np.fft.rfft(signal_block) / BLOCKLEN
+
+    g1.set_ydata(signal_block)
+    g2.set_ydata(np.abs(X))
+
+    # Convert to binary data, write to audio output stream
+    stream.write(signal_block.astype('int16').tobytes(), BLOCKLEN)
+
+    return (g1, g2)
+
+
+# Read microphone, plot audio signal
+
+my_anima = animation.FuncAnimation(
+    my_fig,
+    my_update,
+    init_func = my_init,
+    interval = 10,   # milliseconds (what happens if this is 200?)
+    blit = True,
+    repeat = False
+)
+pyplot.show()   # Needed for FuncAnimation to show plots
+
+stream.stop_stream()
+stream.close()
+p.terminate()
+
+print('* Finished')
+

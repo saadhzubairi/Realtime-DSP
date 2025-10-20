@@ -1,0 +1,1214 @@
+===> combineAllPy.py
+from pathlib import Path
+from typing import List
+
+
+def read_text_with_fallback(file_path: Path) -> str:
+    """Read text using UTF-8, falling back to latin-1 if needed.
+
+    Some demo files may contain characters not valid in UTF-8 on Windows.
+    """
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return file_path.read_text(encoding="latin-1")
+
+
+def find_python_files(root_dir: Path) -> List[Path]:
+    """Return a sorted list of .py files under root_dir (recursively),
+    excluding common transient directories like __pycache__.
+    """
+    all_py_files = [
+        p for p in root_dir.rglob("*.py") if "__pycache__" not in p.parts
+    ]
+    # Sort by normalized POSIX-like path for stable, human-friendly ordering
+    return sorted(all_py_files, key=lambda p: p.as_posix().lower())
+
+
+def write_combined_text(root_dir: Path, py_files: List[Path], output_file: Path) -> None:
+    """Write all files into a single text file with headers:
+
+    ===> <relative_path>
+    <file content>
+    """
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with output_file.open("w", encoding="utf-8") as out_f:
+        for file_path in py_files:
+            rel_path = file_path.relative_to(root_dir).as_posix()
+            out_f.write(f"===> {rel_path}\n")
+            content = read_text_with_fallback(file_path)
+            out_f.write(content)
+            if not content.endswith("\n"):
+                out_f.write("\n")
+            out_f.write("\n")  # blank line between files
+
+
+def main() -> None:
+    # Use the directory that contains this script as the root to search
+    root_dir = Path(__file__).parent.resolve()
+    output_file = root_dir / "all_python_files_combined.txt"
+
+    py_files = find_python_files(root_dir)
+    write_combined_text(root_dir, py_files, output_file)
+    print(f"Wrote {len(py_files)} files to {output_file}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+===> TKdemo_01_window.py
+# Minimal Tk demo
+
+import tkinter as Tk 		# If using Python 3
+# import Tkinter as Tk 		# If using Python 2
+
+print('Close the tk window to quit')
+
+root = Tk.Tk()      # or 'top'
+root.mainloop()
+
+===> TKdemo_02_label_1.py
+# Tk label demo: Minimal demo
+
+import tkinter as Tk   	# for Python 3
+
+root = Tk.Tk()
+
+# Define the label
+L1 = Tk.Label(root, text = 'Hello. How are you?')
+
+# Place the label
+L1.pack()
+
+root.mainloop()
+
+===> TKdemo_02_label_2.py
+# Tk label demo: Two labels
+
+import tkinter as Tk   	# for Python 3
+
+root = Tk.Tk()
+
+# Define label
+L1 = Tk.Label(root, text = 'Hello. How are you?')
+L1.pack()
+
+# Define label
+L2 = Tk.Label(root, text = 'This is another label')
+L2.pack()
+
+root.mainloop()
+
+===> TKdemo_02_label_3.py
+# Tk label demo: Tk string variable
+
+import tkinter as Tk   	# for Python 3
+
+root = Tk.Tk()
+
+# Define a Tk variable (string)
+s1 = Tk.StringVar()
+s1.set('Hello. How are you?')
+
+# Define label
+L1 = Tk.Label(root, textvariable = s1)
+L1.pack()
+
+root.mainloop()
+
+===> TKdemo_02_label_4_versions.py
+# Tk demo: Works for Python 2 and Python 3
+
+import sys
+
+if sys.version_info[0] < 3:
+	import Tkinter as Tk 	# for Python 2
+else:
+	import tkinter as Tk   	# for Python 3
+
+root = Tk.Tk()
+
+# Define a Tk variable (string)
+s1 = Tk.StringVar()
+s1.set('Hello. How are you?')
+
+# Define label
+L1 = Tk.Label(root, textvariable = s1)
+L1.pack()
+
+root.mainloop()
+
+===> TKdemo_03_button_1.py
+# Tk button demo: simple demo.
+# Prints text to console.
+
+import tkinter as Tk   	
+
+def fun1():
+	print('Hello World')
+
+root = Tk.Tk()
+
+# Define button
+B1 = Tk.Button(root, text = 'Press me', command = fun1)
+
+# Place button
+B1.pack()
+
+root.mainloop()
+
+===> TKdemo_03_button_2.py
+# Tk button demo: two buttons.
+# Prints text to console.
+
+import tkinter as Tk   	
+
+def fun1():
+	print('Hello World')
+
+def fun2():
+	print('How are you?')
+
+root = Tk.Tk()
+
+# Define buttons
+B1 = Tk.Button(root, text = 'Press me', command = fun1)
+B2 = Tk.Button(root, text = 'Press me also...', command = fun2)
+
+# Place buttons
+B1.pack()
+B2.pack()
+
+root.mainloop()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+===> TKdemo_03_button_3.py
+# Tk button demo: two buttons (horizontally filled).
+# Prints text to console.
+
+import tkinter as Tk   	
+
+def fun1():
+	print('Hello World')
+
+def fun2():
+	print('How are you?')
+
+root = Tk.Tk()
+
+# Define buttons
+B1 = Tk.Button(root, text = 'Press me', command = fun1)
+B2 = Tk.Button(root, text = 'Press me also...', command = fun2)
+
+# Place buttons
+B1.pack(fill = Tk.X)
+B2.pack(fill = Tk.X)
+
+root.mainloop()
+
+===> TKdemo_03_button_4.py
+# Tk button demo: two buttons (in one row).
+# Prints text to console.
+
+import tkinter as Tk   	
+
+def fun1():
+	print('Hello World')
+
+def fun2():
+	print('How are you?')
+
+root = Tk.Tk()
+
+# Define buttons
+B1 = Tk.Button(root, text = 'Press me', command = fun1)
+B2 = Tk.Button(root, text = 'Press me also...', command = fun2)
+
+# Place buttons
+B1.pack(side = Tk.LEFT)
+B2.pack()
+
+root.mainloop()
+
+===> TKdemo_03_button_5.py
+# Tk button demo: includes quit button.
+# Prints text to console.
+
+import tkinter as Tk   	
+
+def fun1():
+	print('Hello World')
+
+def fun2():
+	print('How are you?')
+
+root = Tk.Tk()
+
+# Define buttons
+B1 = Tk.Button(root, text = 'Press me', command = fun1)
+B2 = Tk.Button(root, text = 'Press me also...', command = fun2)
+B3 = Tk.Button(root, text = 'Quit', command = root.quit)
+
+# Place buttons
+B1.pack()
+B2.pack()
+B3.pack()
+
+root.mainloop()
+
+===> TKdemo_03_button_6.py
+# Tk button demo: includes quit button.
+# Prints text to console.
+
+import tkinter as Tk   	
+
+def fun1():
+	print('Hello World')
+
+def fun2():
+	print('How are you?')
+
+def fun_quit():
+	print('Good bye')
+	root.quit()
+
+root = Tk.Tk()
+
+# Define buttons
+B1 = Tk.Button(root, text = 'Press me', command = fun1)
+B2 = Tk.Button(root, text = 'Press me also...', command = fun2)
+B3 = Tk.Button(root, text = 'Quit', command = fun_quit)
+
+# Place buttons
+B1.pack()
+B2.pack()
+B3.pack()
+
+root.mainloop()
+
+===> TKdemo_03_button_7.py
+# Tk button demo: buttons change text displayed in label.
+# Uses Tk string variable
+
+import tkinter as Tk   	
+
+def fun1():
+	s1.set('The dog is brown')
+
+def fun2():
+	s1.set('The cat is red')
+
+root = Tk.Tk()
+
+s1 = Tk.StringVar()
+s1.set('I am initialized')
+
+# Define widgets
+L1 = Tk.Label(root, textvariable = s1)
+B1 = Tk.Button(root, text = 'Press me', command = fun1)
+B2 = Tk.Button(root, text = 'Press me also...', command = fun2)
+B3 = Tk.Button(root, text = 'Quit', command = root.quit)
+
+# Place widgets
+L1.pack()
+B1.pack(fill = Tk.X)
+B2.pack(fill = Tk.X)
+B3.pack(fill = Tk.X)
+
+root.mainloop()
+
+===> TKdemo_03_button_8.py
+# Tk button demo: buttons to change a value.
+# Uses Tk variables.
+
+import tkinter as Tk   	
+
+def fun1():
+	x.set(x.get() + 1)
+	s.set(str(x.get()))
+
+def fun2():
+	x.set(x.get() - 1)
+	s.set(str(x.get()))
+
+root = Tk.Tk()
+
+# Define Tk variables
+x = Tk.DoubleVar()              # floating point value
+s = Tk.StringVar()				# text string
+
+# Initialize TK variables
+x.set(10)
+s.set(str(x.get()))
+
+# Define widgets
+L1 = Tk.Label(root, textvariable = s)
+B1 = Tk.Button(root, text = 'Increase', command = fun1)
+B2 = Tk.Button(root, text = 'Decrease', command = fun2)
+B3 = Tk.Button(root, text = 'Quit', command = root.quit)
+
+# Place widgets
+L1.pack()
+B1.pack(fill = Tk.X)
+B2.pack(fill = Tk.X)
+B3.pack(fill = Tk.X)
+
+root.mainloop()
+
+===> TKdemo_03_button_8b.py
+# Tk button demo: buttons to change a value.
+# Uses Tk variables.
+# Uses ttk for 'styled' buttons
+
+import tkinter as Tk   	
+from tkinter import ttk
+
+def fun1():
+	x.set(x.get() + 1)
+	s.set(str(x.get()))
+
+def fun2():
+	x.set(x.get() - 1)
+	s.set(str(x.get()))
+
+root = Tk.Tk()
+
+# Define Tk variables
+x = Tk.DoubleVar()              # floating point value
+s = Tk.StringVar()				# text string
+
+# Initialize TK variables
+x.set(10)
+s.set(str(x.get()))
+
+# Define widgets
+L1 = Tk.Label(root, textvariable = s)
+B1 = Tk.ttk.Button(root, text = 'Increase', command = fun1)
+B2 = Tk.ttk.Button(root, text = 'Decrease', command = fun2)
+B3 = Tk.ttk.Button(root, text = 'Quit', command = root.quit)
+
+# Place widgets
+L1.pack()
+B1.pack(fill = Tk.X)
+B2.pack(fill = Tk.X)
+B3.pack(fill = Tk.X)
+
+root.mainloop()
+
+===> TKdemo_04_entry_1.py
+# Tk entry demo: Minimal demo.
+# Does not do anything.
+
+import tkinter as Tk   	# for Python 3
+
+root = Tk.Tk()
+
+# Define label
+L1 = Tk.Label(root, text = 'Enter text')
+
+# Define entry widget
+E1 = Tk.Entry(root)
+
+# Place widgets
+L1.pack()
+E1.pack()
+
+root.mainloop()
+
+===> TKdemo_04_entry_2.py
+# Tk entry demo: entry field and button.
+# Prints entry text to console upon button press.
+
+import tkinter as Tk
+
+def fun1():
+    print('You entered: ' + E1.get())
+
+root = Tk.Tk()
+
+# Define label
+L1 = Tk.Label(root, text = 'Enter text')
+
+# Define entry widget
+E1 = Tk.Entry(root)
+
+# Define button
+B1 = Tk.Button(root, text = 'Click here', command = fun1)
+
+# Place widgets
+L1.pack()
+E1.pack()
+B1.pack()
+
+root.mainloop()
+
+===> TKdemo_04_entry_3.py
+# Tk entry demo: entry and button.
+# Prints entry text to console upon button press.
+# Uses a Tk variable.
+
+import tkinter as Tk
+
+def fun1():
+    print('You entered: ' + s.get())
+
+root = Tk.Tk()
+
+# Define Tk variable
+s = Tk.StringVar()
+
+# Define widgets
+L1 = Tk.Label(root, text = 'Enter text')
+E1 = Tk.Entry(root, textvariable = s)
+B1 = Tk.Button(root, text = 'Click here', command = fun1)
+
+# Place widgets
+L1.pack()
+E1.pack()
+B1.pack()
+
+root.mainloop()
+
+===> TKdemo_04_entry_4.py
+# Tk entry demo: show entry text in label upon button press.
+# Uses a Tk variable.
+
+import tkinter as Tk
+
+def fun1():
+    s.set('You entered: ' + E1.get())
+
+root = Tk.Tk()
+
+# Define Tk string variable
+s = Tk.StringVar()
+
+# Define widgets
+L1 = Tk.Label(root, text = 'Enter text')
+E1 = Tk.Entry(root)
+B1 = Tk.Button(root, text = 'Click here', command = fun1)
+L2 = Tk.Label(root, textvariable = s)
+B2 = Tk.Button(root, text = 'Quit', command = root.quit)
+
+# Place widgets
+L1.pack()
+E1.pack()
+B1.pack()
+L2.pack()
+B2.pack()
+
+root.mainloop()
+
+===> TKdemo_04_entry_5.py
+# Tk entry demo: show entry text in label with continuous update.
+# Use Tk variable
+
+import tkinter as Tk
+
+root = Tk.Tk()
+
+# Define Tk string variable
+s = Tk.StringVar()
+
+# Define widgets
+L1 = Tk.Label(root, text = 'Enter text')
+E1 = Tk.Entry(root, textvariable = s)
+L2 = Tk.Label(root, textvariable = s)
+
+# Place widgets
+L1.pack()
+E1.pack()
+L2.pack()
+
+root.mainloop()
+
+===> TKdemo_04_entry_6.py
+# Tk entry demo: Adds two entered numbers, shows result in a label.
+# Uses a Tk variable.
+
+import tkinter as Tk
+
+def fun1():
+    c = float(E1.get()) + float(E2.get())
+    s.set(str(c))
+
+root = Tk.Tk()
+
+# Define Tk variable
+s = Tk.StringVar()
+
+# Define widgets
+L1 = Tk.Label(root, text = 'Enter two numbers')
+E1 = Tk.Entry(root)
+E2 = Tk.Entry(root) 
+B1 = Tk.Button(root, text = 'Add', command = fun1)
+L2 = Tk.Label(root, textvariable = s)
+B2 = Tk.Button(root, text = 'Quit', command = root.quit)
+
+# Place widgets
+L1.pack()
+E1.pack()
+E2.pack()
+B1.pack()
+L2.pack()
+B2.pack()
+
+root.mainloop()
+
+===> TKdemo_04_entry_6b.py
+# Tk entry demo: Adds two entered numbers, shows result in a label.
+# Uses Tk variables.
+
+import tkinter as Tk
+
+def fun1():
+    c = float(s1.get()) + float(s2.get())
+    s3.set(str(c))
+
+root = Tk.Tk()
+
+# Define Tk variables
+s1 = Tk.StringVar()
+s2 = Tk.StringVar()
+s3 = Tk.StringVar()
+
+# Define widgets
+L1 = Tk.Label(root, text = 'Enter two numbers')
+E1 = Tk.Entry(root, textvariable = s1)
+E2 = Tk.Entry(root, textvariable = s2) 
+B1 = Tk.Button(root, text = 'Add', command = fun1)
+L2 = Tk.Label(root, textvariable = s3)
+B2 = Tk.Button(root, text = 'Quit', command = root.quit)
+
+# Place widgets
+L1.pack()
+E1.pack()
+E2.pack()
+B1.pack()
+L2.pack()
+B2.pack()
+
+root.mainloop()
+
+===> TKdemo_04_entry_7.py
+# Tk entry demo: horizontal widgets
+
+import tkinter as Tk   	# for Python 3
+
+root = Tk.Tk()
+
+# Define widgets
+L1 = Tk.Label(root, text = 'Enter text:')
+E1 = Tk.Entry(root)
+
+# Place widgets
+L1.pack(side = Tk.LEFT)
+E1.pack(side = Tk.RIGHT)
+
+root.mainloop()
+
+===> TKdemo_05_scale_1.py
+# TK slider demo: Minimal.
+# Does not do anything.
+
+import tkinter as Tk
+
+root = Tk.Tk()
+
+# Define slider
+S1 = Tk.Scale(root)
+
+# Place slider
+S1.pack()
+
+root.mainloop()
+
+
+===> TKdemo_05_scale_10.py
+# Tk slider demo: Two sliders and a button.
+
+import tkinter as Tk
+
+def myfun():
+   string1 = 'Sum = ' + str(x.get() + y.get())
+   s.set(string1)
+
+root = Tk.Tk()
+
+# Define Tk variables
+x = Tk.DoubleVar()
+y = Tk.DoubleVar()
+s = Tk.StringVar()
+
+s.set('Click the button')
+
+# Define widgets
+S1 = Tk.Scale(root, variable = x)
+S2 = Tk.Scale(root, variable = y)
+B1 = Tk.Button(root, text = 'Add', command = myfun)
+L1 = Tk.Label(root, textvariable = s)
+
+# Place widgets
+S1.pack(side = Tk.LEFT)
+S2.pack(side = Tk.LEFT)
+B1.pack(side = Tk.LEFT)
+L1.pack(side = Tk.RIGHT)
+
+root.mainloop()
+
+===> TKdemo_05_scale_2.py
+# Tk slider demo: Two sliders
+
+import tkinter as Tk
+
+root = Tk.Tk()
+
+# Define two sliders
+S1 = Tk.Scale(root, label = 'Slider 1')
+S2 = Tk.Scale(root, label = 'Slider 2')
+
+# Place sliders
+# S1.pack()
+# S2.pack()
+
+# Alternately
+S1.pack(side = Tk.LEFT)
+S2.pack()
+
+root.mainloop()
+
+
+===> TKdemo_05_scale_3.py
+# Tk slider demo: Two sliders and a quit button
+
+import tkinter as Tk
+
+root = Tk.Tk()
+
+# Define widgets
+B1 = Tk.Button(root, text = 'Quit', command = root.quit)
+S1 = Tk.Scale(root, label = 'Slider 1')
+S2 = Tk.Scale(root, label = 'Slider 2')
+
+# Place widgets
+B1.pack(side = Tk.BOTTOM, fill = Tk.X)
+S1.pack(side = Tk.LEFT)
+S2.pack()
+
+root.mainloop()
+
+===> TKdemo_05_scale_4.py
+# Tk slider demo: Slider with variable
+# (but the variable is not used)
+
+import tkinter as Tk
+
+root = Tk.Tk()
+
+# Define a Tk variable
+x = Tk.DoubleVar()		# floating point value
+
+# Define slider
+S1 = Tk.Scale(root, variable = x)
+
+# Place slider
+S1.pack()
+
+root.mainloop()
+
+
+===> TKdemo_05_scale_5.py
+# Tk slider demo: Slider with variable.
+# The slider value is printed to the console.
+
+import tkinter as Tk
+
+root = Tk.Tk()
+
+# Define a Tk variable
+x = Tk.DoubleVar()		# floating point value
+
+def myfun1(event):
+	print(x.get())
+
+# Define slider
+S1 = Tk.Scale(root, variable = x, command = myfun1)
+
+# Place slider
+S1.pack()
+
+root.mainloop()
+
+===> TKdemo_05_scale_6.py
+# Tk slider demo: Slider with variable.
+# The variable is displayed in a label.
+# Uses a Tk variable.
+
+import tkinter as Tk
+
+root = Tk.Tk()
+
+# Define Tk variables
+x = Tk.DoubleVar() 		# floating point value
+s = Tk.StringVar()		# text string
+
+def update_label(event):
+	s.set( str(x.get()) )
+
+# Define widgets
+S1 = Tk.Scale(root, variable = x, command = update_label)
+L1 = Tk.Label(root, textvariable = s)
+
+# Place widgets
+S1.pack()
+L1.pack()
+
+root.mainloop()
+
+===> TKdemo_05_scale_7.py
+# Tk slider demo: Two sliders.
+# Their sum is displayed in a label.
+# Uses Tk string variable.
+
+import tkinter as Tk
+
+def update_sum(event):
+	z = x.get() + y.get()
+	s.set('Sum = ' + str(z))
+
+root = Tk.Tk()
+
+# Define Tk variables
+x = Tk.DoubleVar()
+y = Tk.DoubleVar()
+s = Tk.StringVar()
+
+# Define widgets
+S1 = Tk.Scale(root, variable = x, command = update_sum)
+S2 = Tk.Scale(root, variable = y, command = update_sum)
+L1 = Tk.Label(root, textvariable = s)
+
+# Place widgets
+L1.pack(side = Tk.BOTTOM)
+S1.pack(side = Tk.LEFT)
+S2.pack(side = Tk.LEFT)
+
+root.mainloop()
+
+===> TKdemo_05_scale_8.py
+# Tk slider demo: Two sliders.
+# Their sum and product are displayed in two different labels.
+
+import tkinter as Tk
+
+def update(event):
+	z1 = x.get() + y.get()
+	z2 = x.get() * y.get()
+	s1.set( 'Sum = ' + str(z1))
+	s2.set('Product = ' + str(z2))
+
+root = Tk.Tk()
+
+# Define Tk variables
+x = Tk.DoubleVar()
+y = Tk.DoubleVar()
+s1 = Tk.StringVar()
+s2 = Tk.StringVar()
+
+# Define widgets
+S1 = Tk.Scale(root, variable = x, command = update)
+S2 = Tk.Scale(root, variable = y, command = update)
+L1 = Tk.Label(root, textvariable = s1)
+L2 = Tk.Label(root, textvariable = s2)
+B1 = Tk.Button(root, text = 'Close', command = root.quit)
+
+# Place widgets
+S1.pack(side = Tk.LEFT)
+S2.pack(side = Tk.LEFT)
+L1.pack(side = Tk.TOP)
+L2.pack(side = Tk.TOP)
+B1.pack(side = Tk.BOTTOM, fill = Tk.X)
+
+root.mainloop()
+
+===> TKdemo_05_scale_9.py
+# Tk slider demo: Slider and button.
+# Uses Tk string variable.
+
+import tkinter as Tk
+
+def myfun():
+   string1 = 'Value = ' + str(x.get())
+   s.set(string1)
+
+root = Tk.Tk()
+
+# Define Tk variables
+x = Tk.DoubleVar()
+s = Tk.StringVar()
+
+# Define widgets
+S1 = Tk.Scale(root, variable = x)     
+B1 = Tk.Button(root, text = 'Press to display value', command = myfun)
+L1 = Tk.Label(root, textvariable = s)
+
+# Place widgets
+S1.pack()
+B1.pack()
+L1.pack()
+
+root.mainloop()
+
+===> TKdemo_06_update.py
+# Tk demo: Use root.update instead of root.mainloop
+
+import tkinter as Tk   	
+
+def fun1():
+	print('Hello World')
+
+def fun2():
+	print('How are you?')
+
+def fun_quit():
+	global PLAY
+	print('Good bye')
+	PLAY = False
+
+root = Tk.Tk()
+
+# Define buttons
+B1 = Tk.Button(root, text = 'Press me', command = fun1)
+B2 = Tk.Button(root, text = 'Press me also...', command = fun2)
+B3 = Tk.Button(root, text = 'Quit', command = fun_quit)
+
+# Place buttons
+B1.pack()
+B2.pack()
+B3.pack()
+
+# An alternative to root.mainloop() is to use root.update
+
+PLAY = True
+while PLAY:
+  root.update()
+
+===> TKdemo_07_click.py
+# Mouse click demo
+
+import tkinter as Tk    # for Python 3
+
+root = Tk.Tk()
+
+def myfun1(event):
+    print('You clicked at position (%d, %d)' % (event.x, event.y))
+
+F1 = Tk.Frame(root, width = 200, height = 100)
+F1.bind("<Button-1>",  myfun1)		# "<Button-1>" refers to the mouse
+F1.pack()
+
+root.mainloop()
+
+===> TKdemo_08_key.py
+# Key stroke demo
+
+import tkinter as Tk    # for Python 3
+
+root = Tk.Tk()
+
+def my_fun(event):
+    print(type(event))
+    print(type(event.char))
+    print('You pressed key %s' % event.char)
+    if event.char == 'q':
+    	print('Good bye')
+    	# root.quit()      
+    	root.destroy()
+    	# Note: Either root.quit or root.destory work
+
+root.bind("<Key>", my_fun)		# "<Key>" refers to the keyboard
+
+# root.focus_set()				# Might not be necessary
+
+root.mainloop()
+
+
+===> TKdemo_08_keyboard.py
+# Mouse click and keyboard demo
+
+import tkinter as Tk    # for Python 3
+
+root = Tk.Tk()
+
+def fun1(event):
+    print('You clicked at position (%d, %d)' % (event.x, event.y))
+
+def fun2(event):
+    print('You pressed key %s' % repr(event.char))
+
+F1 = Tk.Frame(root, width = 200, height = 100)
+F1.bind("<Button-1>", fun1)		# "<Button-1>" refers to the mouse
+F1.bind("<Key>", fun2)			# "<Key>" refers to the keyboard
+F1.pack()
+F1.focus_set()				# This activates the keyboard
+
+root.mainloop()
+
+
+===> TKdemo_09_messagebox.py
+# TK dialog box demo
+
+import tkinter as Tk   	
+import tkinter.messagebox
+
+def fun1():
+	tkinter.messagebox.showinfo('Message box title', 'Hello World')
+
+# For Python 2:
+# import Tkinter as Tk
+# import tkMessageBox
+# 
+# def fun1():
+# 	tkMessageBox.showinfo('Message box title', 'Hello World')
+
+
+root = Tk.Tk()
+
+# Define buttons
+B1 = Tk.Button(root, text = 'Press me', command = fun1)
+B2 = Tk.Button(root, text = 'Quit', command = root.quit)
+
+# Place buttons
+B1.pack()
+B2.pack()
+
+root.mainloop()
+
+===> versions using config/TKdemo_03_button_6_config.py
+# Tk button demo: buttons change text displayed in label.
+# Uses configure method.
+
+import tkinter as Tk   	
+
+def fun1():
+	L1.configure(text = 'The dog is brown')
+
+def fun2():
+	L1.configure(text = 'The cat is red')
+
+root = Tk.Tk()
+
+# Define widgets
+L1 = Tk.Label(root, text = 'Press the buttons')
+B1 = Tk.Button(root, text = 'Press me', command = fun1)
+B2 = Tk.Button(root, text = 'Press me also...', command = fun2)
+B3 = Tk.Button(root, text = 'Quit', command = root.quit)
+
+# Place widgets
+L1.pack()
+B1.pack(fill = Tk.X)
+B2.pack(fill = Tk.X)
+B3.pack(fill = Tk.X)
+
+root.mainloop()
+
+===> versions using config/TKdemo_04_entry_4_config.py
+# Tk entry demo: show entry text in label upon button press.
+# Use configure method.
+
+import tkinter as Tk
+
+def fun1():
+    L2.configure(text = 'You entered: ' + E1.get())
+
+root = Tk.Tk()
+
+# Define widgets
+L1 = Tk.Label(root, text = 'Enter text')
+E1 = Tk.Entry(root)
+B1 = Tk.Button(root, text = 'Click here', command = fun1)
+L2 = Tk.Label(root)
+B2 = Tk.Button(root, text = 'Quit', command = root.quit)
+
+# Place widgets
+L1.pack()
+E1.pack()
+B1.pack()
+L2.pack()
+B2.pack()
+
+root.mainloop()
+
+===> versions using config/TKdemo_04_entry_6_config.py
+# Tk entry demo: Adds two entered numbers, shows result in a label.
+# Uses configure method.
+
+import tkinter as Tk
+
+def fun1():
+    c = float(E1.get()) + float(E2.get())
+    L2.configure(text = str(c))
+
+root = Tk.Tk()
+
+# Define widgets
+L1 = Tk.Label(root, text = 'Enter two numbers')
+E1 = Tk.Entry(root)
+E2 = Tk.Entry(root) 
+B1 = Tk.Button(root, text = 'Add', command = fun1)
+L2 = Tk.Label(root)
+B2 = Tk.Button(root, text = 'Quit', command = root.quit)
+
+# Place widgets
+L1.pack()
+E1.pack()
+E2.pack()
+B1.pack()
+L2.pack()
+B2.pack()
+
+root.mainloop()
+
+===> versions using config/TKdemo_05_scale_10_config.py
+# Slider demo: Two sliders and a button.
+
+import tkinter as Tk
+
+def myfun():
+   string1 = 'Sum = ' + str(x.get() + y.get())
+   L1.config(text = string1)
+
+root = Tk.Tk()
+
+# Define Tk variables
+x = Tk.DoubleVar()
+y = Tk.DoubleVar()
+
+# Define widgets
+S1 = Tk.Scale(root, variable = x)
+S2 = Tk.Scale(root, variable = y)
+B1 = Tk.Button(root, text = 'Add', command = myfun)
+L1 = Tk.Label(root, text = 'Click the button')
+
+# Place widgets
+S1.pack(side = Tk.LEFT)
+S2.pack(side = Tk.LEFT)
+B1.pack(side = Tk.LEFT)
+L1.pack(side = Tk.RIGHT)
+
+root.mainloop()
+
+===> versions using config/TKdemo_05_scale_6_config.py
+# Slider demo: Slider with variable.
+# The variable is displayed in a label.
+# Uses configure method
+
+import tkinter as Tk
+
+root = Tk.Tk()
+
+# Define Tk variable
+x = Tk.DoubleVar() 		# floating point value
+
+def update_label(event):
+	L1.config(text = str(x.get()))
+
+# Define widgets
+S1 = Tk.Scale(root, variable = x, command = update_label)
+L1 = Tk.Label(root)
+
+# Place widgets
+S1.pack()
+L1.pack()
+
+root.mainloop()
+
+===> versions using config/TKdemo_05_scale_7_config.py
+# Slider demo: Two sliders.
+# Their sum is displayed in a label.
+# Uses configure method.
+
+import tkinter as Tk
+
+def update_sum(event):
+	z = x.get() + y.get()
+	L1.config(text = 'Sum = ' + str(z))
+
+root = Tk.Tk()
+
+# Define Tk variables
+x = Tk.DoubleVar()
+y = Tk.DoubleVar()
+
+# Define widgets
+S1 = Tk.Scale(root, variable = x, command = update_sum)
+S2 = Tk.Scale(root, variable = y, command = update_sum)
+L1 = Tk.Label(root)
+
+# Place widgets
+L1.pack(side = Tk.BOTTOM)
+S1.pack(side = Tk.LEFT)
+S2.pack(side = Tk.LEFT)
+
+root.mainloop()
+
+===> versions using config/TKdemo_05_scale_9_config.py
+# Slider demo: Slider and button.
+# Uses configure method.
+
+import tkinter as Tk
+
+def myfun():
+   string1 = 'Value = ' + str(x.get())
+   L1.config(text = string1)
+
+root = Tk.Tk()
+
+# Define Tk variables
+x = Tk.DoubleVar()
+
+
+# Define widgets
+S1 = Tk.Scale(root, variable = x)     
+B1 = Tk.Button(root, text = 'Press to display value', command = myfun)
+L1 = Tk.Label(root)
+
+# Place widgets
+S1.pack()
+B1.pack()
+L1.pack()
+
+root.mainloop()
+
