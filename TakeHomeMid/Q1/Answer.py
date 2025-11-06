@@ -20,7 +20,7 @@ RATE            = wf.getframerate()     # Sampling rate (frames/second)
 signal_length   = wf.getnframes()       # Signal length
 WIDTH           = wf.getsampwidth()     # Number of bytes per sample
 ALPHA           = 1.2              # Scaling factor
-OVERLAP_FACTOR  = 0.75
+OVERLAP_FACTOR  = 0.5
 BLOCKLEN = 2048
 MAXVALUE = 2**15-1  # Maximum allowed output signal value (because WIDTH = 2)
 
@@ -75,7 +75,7 @@ def frames_to_process_with_hops(all_frames, block_size,overlap_factor:int=0.5):
         idx_i = 0
         idx_l = block_size
         while idx_l < len(all_frames)-1:
-            print("from",idx_i,"to",idx_l)
+            #print("from",idx_i,"to",idx_l)
             frames.append(all_frames[idx_i:idx_l])
             idx_i = idx_i + hop_count
             idx_l = idx_i + block_size
@@ -86,51 +86,25 @@ all_samples = np.frombuffer(binary_data, dtype=np.int16)
 frames = frames_to_process_with_hops(all_frames=all_samples, block_size=BLOCKLEN, overlap_factor=OVERLAP_FACTOR)
 print("number of blocks:",len(frames))
 # Get first set of frame from wave file0
+Hop = int(BLOCKLEN * (1 - OVERLAP_FACTOR))
+prev_tail = np.zeros(BLOCKLEN - Hop)
+
 for frame_idx in range(len(frames)):
+    print (frame_idx)
     input_block = frames[frame_idx]
-    
-    if frame_idx == (len(frames)-1):
-        next_input_block = []
-    else:
-        next_input_block = frames[frame_idx+1]
-    
-    # filter (here do the fft filtering thing)
-    output_block = process_block_fft_scaling(input_block=input_block, alpha=ALPHA)
-    if frame_idx == (len(frames)-1):
-        next_output_block = []
-    else:
-        next_output_block = process_block_fft_scaling(input_block=next_input_block, alpha=ALPHA)
-    
-    hop_count = math.floor(BLOCKLEN*(1-OVERLAP_FACTOR))
-    # averaging of the values of overlapping samples:
-    for i in range(hop_count):
-        if frame_idx == (len(frames)-1):
-            continue
-        else:
-            output_block[hop_count+i] = (output_block[hop_count+i] + next_output_block[i]) * 0.5
-    # clipping
-    if frame_idx == 0:
-        output_block = output_block
-    else:
-        output_block =output_block[hop_count:]
-    output_block = np.clip(output_block, -MAXVALUE, MAXVALUE)
-    # convert to integer
-    output_block = np.around(output_block)          # round to integer
-    output_block = output_block.astype('int16')     # convert to 16-bit integer
+    output_block = process_block_fft_scaling(input_block, ALPHA)
+    # average overlapping region with previous tail
+    output_block[:len(prev_tail)] = 0.5*(output_block[:len(prev_tail)] + prev_tail)
 
-    # Convert output value to binary data
-    # binary_data = struct.pack('h' * BLOCKLEN, *output_block)
-    binary_data = output_block.tobytes() # using Numpy
-
-    # Write binary data to audio stream
+    # clip and write only new Hop samples
+    output_chunk = np.clip(output_block[:Hop], -MAXVALUE, MAXVALUE)
+    output_chunk = np.around(output_chunk).astype(np.int16)
+    binary_data = output_chunk.tobytes()
     stream.write(binary_data)
-
-    # Write binary data to output wave file
     output_wf.writeframes(binary_data)
-
-    # Get next frame from wave file
-    binary_data = wf.readframes(BLOCKLEN)
-
+    # store tail for next iteration
+    prev_tail = output_block[Hop:]
+    
 print('* Finished')
 
 stream.stop_stream()
