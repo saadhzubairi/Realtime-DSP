@@ -3,6 +3,7 @@ import numpy as np
 import numpy.typing as npt
 import scipy.signal
 import os
+import math
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 wavfile = os.path.join(base_dir, 'author.wav')
@@ -18,7 +19,10 @@ CHANNELS        = wf.getnchannels()     # Number of channels
 RATE            = wf.getframerate()     # Sampling rate (frames/second)
 signal_length   = wf.getnframes()       # Signal length
 WIDTH           = wf.getsampwidth()     # Number of bytes per sample
-ALPHA           = 0.5                   # Scaling factor
+ALPHA           = 1.2              # Scaling factor
+OVERLAP_FACTOR  = 0.75
+BLOCKLEN = 2048
+MAXVALUE = 2**15-1  # Maximum allowed output signal value (because WIDTH = 2)
 
 print('The file has %d channel(s).'            % CHANNELS)
 print('The frame rate is %d frames/second.'    % RATE)
@@ -30,19 +34,6 @@ output_wf.setframerate(RATE)
 output_wf.setsampwidth(WIDTH)
 output_wf.setnchannels(CHANNELS)
 
-# Difference equation coefficients
-b0 =  0.008442692929081
-b2 = -0.016885385858161
-b4 =  0.008442692929081
-b = [b0, 0.0, b2, 0.0, b4]
-
-# a0 =  1.000000000000000
-a1 = -3.580673542760982
-a2 =  4.942669993770672
-a3 = -3.114402101627517
-a4 =  0.757546944478829
-a = [1.0, a1, a2, a3, a4]
-
 p = pyaudio.PyAudio()
 
 # Open audio stream
@@ -53,11 +44,6 @@ stream = p.open(
     input       = False,
     output      = True )
 
-BLOCKLEN = 1024
-MAXVALUE = 2**15-1  # Maximum allowed output signal value (because WIDTH = 2)
-
-# Get first set of frame from wave file0
-binary_data = wf.readframes(BLOCKLEN)
 
 # ORDER = 4   # filter is fourth order
 # states = np.zeros(ORDER)
@@ -77,20 +63,57 @@ def process_block_fft_scaling(input_block:npt.NDArray,alpha:float):
         # else it'll be 0
     resultant = np.fft.irfft(Y)
     return resultant
+   
+   
+def frames_to_process_with_hops(all_frames, block_size,overlap_factor:int=0.5):
+    frames = []
+    if overlap_factor > 1 or overlap_factor < 0:
+        print("[-] invalid overlap factor")
+        return
+    else:
+        hop_count = math.floor(block_size*(1-overlap_factor))
+        idx_i = 0
+        idx_l = block_size
+        while idx_l < len(all_frames)-1:
+            print("from",idx_i,"to",idx_l)
+            frames.append(all_frames[idx_i:idx_l])
+            idx_i = idx_i + hop_count
+            idx_l = idx_i + block_size
+    return frames
+
+binary_data = wf.readframes(signal_length)
+all_samples = np.frombuffer(binary_data, dtype=np.int16)
+frames = frames_to_process_with_hops(all_frames=all_samples, block_size=BLOCKLEN, overlap_factor=OVERLAP_FACTOR)
+print("number of blocks:",len(frames))
+# Get first set of frame from wave file0
+for frame_idx in range(len(frames)):
+    input_block = frames[frame_idx]
     
-
-while len(binary_data) == WIDTH * BLOCKLEN:
-
-    # convert binary data to numbers
-    # input_block = struct.unpack('h' * BLOCKLEN, binary_data) 
-    input_block = np.frombuffer(binary_data, dtype = 'int16') # use Numpy
-
+    if frame_idx == (len(frames)-1):
+        next_input_block = []
+    else:
+        next_input_block = frames[frame_idx+1]
+    
     # filter (here do the fft filtering thing)
     output_block = process_block_fft_scaling(input_block=input_block, alpha=ALPHA)
-
+    if frame_idx == (len(frames)-1):
+        next_output_block = []
+    else:
+        next_output_block = process_block_fft_scaling(input_block=next_input_block, alpha=ALPHA)
+    
+    hop_count = math.floor(BLOCKLEN*(1-OVERLAP_FACTOR))
+    # averaging of the values of overlapping samples:
+    for i in range(hop_count):
+        if frame_idx == (len(frames)-1):
+            continue
+        else:
+            output_block[hop_count+i] = (output_block[hop_count+i] + next_output_block[i]) * 0.5
     # clipping
+    if frame_idx == 0:
+        output_block = output_block
+    else:
+        output_block =output_block[hop_count:]
     output_block = np.clip(output_block, -MAXVALUE, MAXVALUE)
-
     # convert to integer
     output_block = np.around(output_block)          # round to integer
     output_block = output_block.astype('int16')     # convert to 16-bit integer
