@@ -1,4 +1,0 @@
-
-Write a python program using the animation function to create
-a version of the program play_randomly.py with real-time plotting like the screen recording. 
-
