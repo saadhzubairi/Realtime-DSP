@@ -48,7 +48,7 @@ CHANNELS        =  wf.getnchannels()
 RATE            = wf.getframerate()
 WIDTH           = wf.getsampwidth()
 signal_length   = wf.getnframes()
-BLOCKLEN        = 2048
+BLOCKLEN        = 1024
 OVERLAP_FACTOR  = 0.5
 MAXVALUE        = 2**15 - 1
 

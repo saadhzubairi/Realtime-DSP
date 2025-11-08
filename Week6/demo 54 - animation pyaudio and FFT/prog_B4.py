@@ -39,7 +39,6 @@ stream = p.open(
 
 
 # Set up plots
-
 my_fig = pyplot.figure(1)
 ax1 = my_fig.add_subplot(2, 1, 1)
 ax2 = my_fig.add_subplot(2, 1, 2)
@@ -100,7 +99,7 @@ my_anima = animation.FuncAnimation(
     my_fig,
     my_update,
     init_func = my_init,
-    interval = 10,   # milliseconds (what happens if this is 200?)
+    interval = 1,   # milliseconds (what happens if this is 200?)
     blit = True,
     repeat = False
 )

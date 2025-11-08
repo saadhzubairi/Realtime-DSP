@@ -7,7 +7,9 @@ import tkinter as Tk
 import matplotlib
 from matplotlib import pyplot
 from matplotlib import animation
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
+matplotlib.use('TkAgg')
 
 # function to make a preprocessed list of frames for overlapped block processing
 def frames_to_process_with_hops(all_frames, block_size, overlap_factor):
@@ -52,9 +54,13 @@ CHANNELS        =  wf.getnchannels()
 RATE            = wf.getframerate()
 WIDTH           = wf.getsampwidth()
 signal_length   = wf.getnframes()
-BLOCKLEN        = 2048
+BLOCKLEN        = 256
 OVERLAP_FACTOR  = 0.5
 MAXVALUE        = 2**15 - 1
+
+BLOCK_DURATION = 1000.0 * BLOCKLEN / RATE
+print('Block length: %d' % BLOCKLEN)
+print('Duration of block in milliseconds: %.2f' % BLOCK_DURATION)
 
 print('The file has %d channel(s).'            % CHANNELS)
 print('The frame rate is %d frames/second.'    % RATE)
@@ -79,15 +85,55 @@ alpha.set(1.0)
 # print(alpha.get())
 
 # Slider config here
-alpha_slider = Tk.Scale(root, label='Scaling Factor (From 0.5 to 1)', variable=alpha, from_=0.5, to=2.0,resolution=0.01, orient=Tk.HORIZONTAL, length=300)
-alpha_slider.pack(side=Tk.TOP)
+alpha_slider = Tk.Scale(root, label='Scaling Factor (From 0.5 to 2)', variable=alpha, from_=0.5, to=2.0,resolution=0.01, orient=Tk.HORIZONTAL, length=300)
+#alpha_slider.pack(side=Tk.TOP)
 
 # Quit button config here
 def handle_close_quit():
-    global CONTINUE
-    CONTINUE = False
+    root.destroy()
+root.protocol("WM_DELETE_WINDOW", handle_close_quit)
 B_quit = Tk.Button(root, text='Quit', command=handle_close_quit)
-B_quit.pack(side=Tk.BOTTOM, fill=Tk.X)
+
+# DEFINE FIGURE
+fig1 = matplotlib.figure.Figure()                     # not using pyplot
+ax_inpFFT = fig1.add_subplot(2, 1, 1)
+ax_outFFT = fig1.add_subplot(2, 1, 2)
+fig1.set_size_inches((6, 8))  # (width, height)
+
+n = np.arange(BLOCKLEN)
+
+output_block = np.zeros(BLOCKLEN)
+input_block = np.zeros(BLOCKLEN)
+y_lim = 1750
+X_in = np.fft.rfft(input_block)  # real fft
+f1 = np.arange(X_in.size) / BLOCKLEN
+[line_org_spectra] = ax_inpFFT.plot(f1, np.abs(X_in)/BLOCKLEN)
+ax_inpFFT.set_xlim(0, 0.5)
+ax_inpFFT.set_ylim(0, y_lim)
+ax_inpFFT.set_title('Spectrum of input signal')
+ax_inpFFT.set_xlabel('Frequency (cycles/sample)')
+
+X_out = np.fft.rfft(output_block)  # real fft
+f2 = np.arange(X_out.size) / BLOCKLEN
+[line_con_spectra] = ax_outFFT.plot(f2, np.abs(X_out)/BLOCKLEN)
+ax_outFFT.set_xlim(0, 0.5)
+ax_outFFT.set_ylim(0, y_lim)
+ax_outFFT.set_title('Spectrum of output signal')
+ax_outFFT.set_xlabel('Frequency (cycles/sample)')
+
+fig1.tight_layout()
+
+# Turn figure into a Tkinter widget
+my_canvas = FigureCanvasTkAgg(fig1, master = root)
+# fig1.canvas.draw()   # (optional ?)
+# my_canvas.draw()   # (optional ?)
+C1 = my_canvas.get_tk_widget()   # canvas widget
+
+# PLACE WIDGETS
+
+C1.pack()
+B_quit.pack(side = 'right', expand = True, fill = 'both')
+alpha_slider.pack(side = 'left', expand = True, fill = 'both')
 
 # Pyaudio config
 p = pyaudio.PyAudio()
@@ -97,16 +143,24 @@ stream = p.open(
     channels    = CHANNELS,
     rate        = RATE,
     input       = False,
-    output      = True )
-
+    output      = True,
+    frames_per_buffer = BLOCKLEN
+    )
 
 # Main loop
 print('* Start')
 
+def my_init():
+    print('hello')
+    return (line_org_spectra, line_con_spectra)
+
 prev_tail = np.zeros(BLOCKLEN - Hop)
 frames = frames_to_process_with_hops(all_samples, BLOCKLEN, OVERLAP_FACTOR)
 frame_idx = 0
-while CONTINUE:
+
+def my_update(i):
+    global frame_idx
+    global prev_tail
     root.update()
     
     # get slider value in real time
@@ -124,14 +178,33 @@ while CONTINUE:
     # clipping
     output_chunk = np.clip(output_block[:Hop], -MAXVALUE, MAXVALUE)
     output_chunk = np.around(output_chunk).astype(np.int16)
+    
+    # write to the graph variables
+    line_org_spectra.set_ydata(np.abs(np.fft.rfft(input_block))/BLOCKLEN)
+    line_con_spectra.set_ydata(np.abs(np.fft.rfft(output_block))/BLOCKLEN)
+
     stream.write(output_chunk.tobytes())
     
     prev_tail = output_block[Hop:]
     # increment to the next frame (circular)
     frame_idx = (frame_idx + 1) % len(frames)
+    
+    return (line_org_spectra, line_con_spectra)
 
 print('* Finished')
 
+
+my_anima = animation.FuncAnimation(
+    fig1,
+    my_update,
+    init_func = my_init,
+    interval = 10,   # milliseconds (what happens if this is 200?)
+    blit = True,
+    cache_frame_data = False,
+    repeat = False
+)
+
+Tk.mainloop()
 
 stream.stop_stream()
 stream.close()
