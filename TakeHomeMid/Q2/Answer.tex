@@ -1,0 +1,311 @@
+\documentclass[11pt]{article}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{listings}
+
+
+\topmargin=-0.45in
+\evensidemargin=0in
+\oddsidemargin=0in
+\textwidth=6.5in
+\textheight=9.0in
+\headsep=0.25in
+\renewcommand{\thesubsection}{\alph{subsection})}
+\renewcommand\lstlistingname{Snippet}
+\renewcommand\lstlistlistingname{}
+
+\usepackage{xcolor}
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codeorange}{rgb}{1,0.49,0}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.96}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegray},
+    keywordstyle=\color{codeorange},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codegreen},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    xleftmargin=10pt,
+}
+
+\lstset{style=mystyle}
+% Title and Author Customization
+\title{
+    \vspace{3em}
+    \textbf{Digital Signal Processing Lab}\\
+    Take Home Exam - Q2
+    \vspace{1em}
+}
+\author{
+    Saad Zubairi \\ 
+    shz2020 \\
+    \vspace{1em}
+}
+\vspace{1em}
+\date{\today}
+
+\begin{document}
+\maketitle	
+
+\pagebreak
+
+\section*{Solution}
+    
+\subsection*{Premise}
+Question 2 extends Question 1's solution to include vizualization of the frequency spectra of both original and changed audio in real time as the user slides the slider to change the alpha value.
+
+\subsection*{Approach}
+
+For this question, I essentially used the code implementation from \texttt{prog\_07\_filter\_spectrum.py}, Week 8's Demo 63 code. The main addition here is of matplotlib's animation framework to visualize the spectra. Of course, everything else from Q1 remains unchanged, but the processing loop structure was slightly modified to work with matplotlib's \texttt{FuncAnimation} instead of a simple while loop.
+
+\subsubsection*{Detailed steps to solution}
+
+\begin{itemize}
+    \item \textbf{Matplotlib Visualization:} Following the structure from Demo 63, I set up a matplotlib figure with two subplots, one for each, input and output spectras. The figure is embedded in the Tkinter window using \texttt{FigureCanvasTkAgg}:
+    
+    \begin{lstlisting}[language=python, label={lst:figure_setup}, breaklines=true, caption={Matplotlib figure setup}]
+# DEFINE FIGURE
+fig1 = matplotlib.figure.Figure()                     # not using pyplot
+ax_inpFFT = fig1.add_subplot(2, 1, 1)
+ax_outFFT = fig1.add_subplot(2, 1, 2)
+fig1.set_size_inches((6, 8))  # (width, height)
+
+# Initialize plot lines
+X_in = np.fft.rfft(input_block)  # real fft
+f1 = np.arange(X_in.size) / BLOCKLEN
+[line_org_spectra] = ax_inpFFT.plot(f1, np.abs(X_in)/BLOCKLEN)
+ax_inpFFT.set_xlim(0, 0.5)
+ax_inpFFT.set_ylim(0, y_lim)
+ax_inpFFT.set_title('Spectrum of input signal')
+ax_inpFFT.set_xlabel('Frequency (cycles/sample)')
+
+X_out = np.fft.rfft(output_block)  # real fft
+f2 = np.arange(X_out.size) / BLOCKLEN
+[line_con_spectra] = ax_outFFT.plot(f2, np.abs(X_out)/BLOCKLEN)
+ax_outFFT.set_xlim(0, 0.5)
+ax_outFFT.set_ylim(0, y_lim)
+ax_outFFT.set_title('Spectrum of output signal')
+ax_outFFT.set_xlabel('Frequency (cycles/sample)')
+    \end{lstlisting}
+    
+    \item \textbf{Processing Loop:} The main processing loop from Q1 was tweaked a bit to work with matplotlib's animation framework. Here are the changes made:
+    \begin{enumerate}
+        \item The loop is now driven by \texttt{FuncAnimation} instead of a while loop
+        \item The update function must return the plot line objects for the plotting
+        \item The spectrum plots are updated each iteration by computing the FFT of both input and output blocks
+    \end{enumerate}
+    \begin{lstlisting}[language=python, label={lst:update_function}, breaklines=true, caption={Modified update function with visualization}]
+def my_update(i):
+    global frame_idx
+    global prev_tail
+    root.update()
+    
+    # get slider value in real time
+    alpha_from_slider = alpha.get()
+    
+    # get next input frame  
+    input_block = frames[frame_idx]
+    
+    # process the scaled 
+    output_block = process_block_fft_scaling(input_block, alpha_from_slider)
+
+    # overlap and add
+    output_block[:len(prev_tail)] = 0.5 * (output_block[:len(prev_tail)] + prev_tail)
+
+    # clipping
+    output_chunk = np.clip(output_block[:Hop], -MAXVALUE, MAXVALUE)
+    output_chunk = np.around(output_chunk).astype(np.int16)
+    
+    # write to the graph variables
+    line_org_spectra.set_ydata(np.abs(np.fft.rfft(input_block))/BLOCKLEN)
+    line_con_spectra.set_ydata(np.abs(np.fft.rfft(output_block))/BLOCKLEN)
+
+    stream.write(output_chunk.tobytes())
+    
+    prev_tail = output_block[Hop:]
+    # increment to the next frame (circular)
+    frame_idx = (frame_idx + 1) % len(frames)
+    
+    return (line_org_spectra, line_con_spectra)
+    \end{lstlisting}
+    
+    The loop logic for calculation of course, as you can tell, remains exactly the same.
+
+    \item \textbf{Animation:} The animation is initialized with \texttt{FuncAnimation}, which continuously calls \texttt{my\_update()} at regular intervals (10 milliseconds for a smoother, faster updating animation but we can also increase the value for examining the spectra in close detail). This is basically what lets us have the smooth real-time updates for the spectrum visualization:
+    
+    \begin{lstlisting}[language=python, label={lst:animation}, breaklines=true, caption={Animation setup}]
+my_anima = animation.FuncAnimation(
+    fig1,
+    my_update,
+    init_func = my_init,
+    interval = 10,   # milliseconds
+    blit = True,
+    cache_frame_data = False,
+    repeat = False
+)
+
+Tk.mainloop()
+    \end{lstlisting}
+    
+    \item \textbf{Some other notable differences from Q1:}
+    \begin{itemize}
+        \item The block size was also changed from 1024 to 256 samples, for a smoother animation.
+    \end{itemize}
+\end{itemize}
+
+\pagebreak
+
+\section*{Addendum}
+Here's the full implementation in code
+\begin{lstlisting}[language=python, label={lst:overlap_add}, breaklines=true]
+import pyaudio
+import wave
+import numpy as np
+import os
+import math
+import tkinter as Tk
+
+# function to make a preprocessed list of frames for overlapped block processing
+def frames_to_process_with_hops(all_frames, block_size, overlap_factor):
+    frames = []
+    hop_count = math.floor(block_size * (1 - overlap_factor))
+    idx_i = 0
+    idx_l = block_size
+    while idx_l < len(all_frames) - 1:
+        frames.append(all_frames[idx_i:idx_l])
+        idx_i += hop_count
+        idx_l = idx_i + block_size
+    return frames
+
+# functiuon for processing blocks with scaling via fft and ifft with interpolation
+def process_block_fft_scaling(input_block, alpha):
+    X = np.fft.rfft(input_block)
+    Y = np.zeros_like(X)
+    for src_ind in range(X.size):
+        dst_ind = src_ind / alpha
+        if dst_ind < X.size - 1:
+            i0 = int(np.floor(dst_ind))
+            i1 = i0 + 1
+            t = dst_ind - i0
+            Y[src_ind] = (1 - t) * X[i0] + t * X[i1]
+    y = np.fft.irfft(Y)
+    return y
+
+
+
+base_dir = os.path.dirname(os.path.abspath(__file__))
+wavfile = os.path.join(base_dir, 'author.wav')
+wf = wave.open(wavfile, 'rb')
+#output_wavfile = 'author_output_blocks_corrected.wav'
+
+#print('Play the wave file %s.' % wavfile)
+
+# Open wave file (should be mono channel)
+#wf = wave.open( wavfile, 'rb' )
+
+CONTINUE = True # Variable for the looping mechanic
+CHANNELS        =  wf.getnchannels()
+RATE            = wf.getframerate()
+WIDTH           = wf.getsampwidth()
+signal_length   = wf.getnframes()
+BLOCKLEN        = 1024
+OVERLAP_FACTOR  = 0.5
+MAXVALUE        = 2**15 - 1
+
+print('The file has %d channel(s).'            % CHANNELS)
+print('The frame rate is %d frames/second.'    % RATE)
+print('The file has %d frames.'                % signal_length)
+print('There are %d bytes per sample.'         % WIDTH)
+
+#output_wf = wave.open(output_wavfile, 'w')      # wave file
+#output_wf.setframerate(RATE)
+#output_wf.setsampwidth(WIDTH)
+#output_wf.setnchannels(CHANNELS)
+
+Hop = int(BLOCKLEN * (1 - OVERLAP_FACTOR))
+binary_data = wf.readframes(signal_length)
+all_samples = np.frombuffer(binary_data, dtype=np.int16)
+
+root = Tk.Tk()
+root.title('Real-time Frequency Scaling')
+
+# Scaling factor init
+alpha = Tk.DoubleVar()
+alpha.set(1.0)  
+# print(alpha.get())
+
+# Slider config here
+alpha_slider = Tk.Scale(root, label='Scaling Factor (From 0.5 to 1)', variable=alpha, from_=0.5, to=2.0,resolution=0.01, orient=Tk.HORIZONTAL, length=300)
+alpha_slider.pack(side=Tk.TOP)
+
+# Quit button config here
+def handle_close_quit():
+    global CONTINUE
+    CONTINUE = False
+B_quit = Tk.Button(root, text='Quit', command=handle_close_quit)
+B_quit.pack(side=Tk.BOTTOM, fill=Tk.X)
+
+# Pyaudio config
+p = pyaudio.PyAudio()
+# Open audio stream
+stream = p.open(
+    format      = p.get_format_from_width(WIDTH),
+    channels    = CHANNELS,
+    rate        = RATE,
+    input       = False,
+    output      = True )
+
+
+# Main loop
+print('* Start')
+
+prev_tail = np.zeros(BLOCKLEN - Hop)
+frames = frames_to_process_with_hops(all_samples, BLOCKLEN, OVERLAP_FACTOR)
+frame_idx = 0
+while CONTINUE:
+    root.update()
+    
+    # get slider value in real time
+    alpha_from_slider = alpha.get()
+    
+    # get next input frame  
+    input_block = frames[frame_idx]
+    
+    # process the scaled 
+    output_block = process_block_fft_scaling(input_block, alpha_from_slider)
+
+    # overlap and add
+    output_block[:len(prev_tail)] = 0.5 * (output_block[:len(prev_tail)] + prev_tail)
+
+    # clipping
+    output_chunk = np.clip(output_block[:Hop], -MAXVALUE, MAXVALUE)
+    output_chunk = np.around(output_chunk).astype(np.int16)
+    stream.write(output_chunk.tobytes())
+    
+    prev_tail = output_block[Hop:]
+    # increment to the next frame (circular)
+    frame_idx = (frame_idx + 1) % len(frames)
+
+print('* Finished')
+
+
+stream.stop_stream()
+stream.close()
+p.terminate()
+wf.close()
+\end{lstlisting}
+
+\end{document}
