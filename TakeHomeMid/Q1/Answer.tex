@@ -1,0 +1,189 @@
+\documentclass[11pt]{article}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{listings}
+
+
+\topmargin=-0.45in
+\evensidemargin=0in
+\oddsidemargin=0in
+\textwidth=6.5in
+\textheight=9.0in
+\headsep=0.25in
+\renewcommand{\thesubsection}{\alph{subsection})}
+\renewcommand\lstlistingname{Snippet}
+\renewcommand\lstlistlistingname{}
+
+\usepackage{xcolor}
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codeorange}{rgb}{1,0.49,0}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.96}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegray},
+    keywordstyle=\color{codeorange},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codegreen},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    xleftmargin=10pt,
+}
+
+\lstset{style=mystyle}
+% Title and Author Customization
+\title{
+    \vspace{3em}
+    \textbf{Digital Signal Processing Lab}\\
+    Take Home Exam - Q1
+    \vspace{1em}
+}
+\author{
+    Saad Zubairi \\ 
+    shz2020 \\
+    \vspace{1em}
+}
+\vspace{1em}
+\date{\today}
+
+\begin{document}
+\maketitle	
+
+\pagebreak
+
+\section*{Solution}
+    
+\subsection*{Premise}
+The basic premise of this question was to create a program that lets us shift the frequency of an input signal by a scaling factor while also preserving the harmonic structure of the signal, and letting the user shift the frequency through a GUI based slider that repeats the audio in real time. The suggested way of approaching this problem is by taking FFT of the input, shifting the frequency spectrim by the scaling factor, and then inversing the FFT.
+
+\subsection{Approach}
+The approach was simple. Taking hints from \texttt{Demo 13}, \texttt{Demo 14}, and \texttt{Demo 56},  I implemented frequency scaling using FFT processing with overlapping block processing. To ensure smooth transitions between block boundaries and avoid artifacts, the signal is broken down into overlapping blocks with a 50\% overlap factor, obtained through trial and error. Each block is processed independently using FFT, frequency scaling via interpolation, and IFFT. The processed blocks are then combined using the overlap-add method.
+
+\subsubsection*{Detailed steps to solution}
+
+\begin{itemize}
+    \item \textbf{Blocks Forming:} Before processing, the signal is divided into overlapping blocks using the function \texttt{frames\_to\_process\_with\_hops()}. The overlap factor is set to 0.5.
+    \begin{lstlisting}[language=python, label={lst:frames}, breaklines=true, caption={Block formation with overlap}]
+def frames_to_process_with_hops(all_frames, block_size, overlap_factor):
+    frames = []
+    hop_count = math.floor(block_size * (1 - overlap_factor))
+    idx_i = 0
+    idx_l = block_size
+    while idx_l < len(all_frames) - 1:
+        frames.append(all_frames[idx_i:idx_l])
+        idx_i += hop_count
+        idx_l = idx_i + block_size
+    return frames
+    \end{lstlisting}
+    
+    \item \textbf{FFT and Frequency Scaling:} Each block is processed using the \texttt{process\_block\_fft\_scaling()} function. For each block, this function:
+    \begin{enumerate}
+        \item Computes the real FFT of the input block.
+        \item Scales the frequency spectrum by the factor $\alpha$ using linear interpolation
+        \item Computes the inverse real FFT to obtain the time-domain output
+    \end{enumerate}
+    
+    The frequency scaling is achieved by mapping each bin $k$ to a destination bin $k/\alpha$. Of course since $k/\alpha$ may rarely be an integer, linear interpolation is used between bins:
+    $$\textbf{y}[k] = (1-t) \cdot \textbf{x}[\lfloor k/\alpha \rfloor] + t \cdot \textbf{x}[\lfloor k/\alpha \rfloor + 1]$$
+    where $t = k/\alpha - \lfloor k/\alpha \rfloor$ is of course the fractional part.
+    \pagebreak
+    \begin{lstlisting}[language=python, label={lst:fft_scaling}, breaklines=true, caption={FFT-based frequency scaling with interpolation}]
+def process_block_fft_scaling(input_block, alpha):
+    X = np.fft.rfft(input_block)
+    Y = np.zeros_like(X)
+    for src_ind in range(X.size):
+        dst_ind = src_ind / alpha
+        if dst_ind < X.size - 1:
+            i0 = int(np.floor(dst_ind))
+            i1 = i0 + 1
+            t = dst_ind - i0
+            Y[src_ind] = (1 - t) * X[i0] + t * X[i1]
+    y = np.fft.irfft(Y)
+    return y
+    \end{lstlisting}
+    
+    \item \textbf{Overlap-Add Processing:} For smooth combinig of blocks, the tail of the previous block (which essentially is the overlapping portion) is stored and added to the beginning of the current block with a 0.5 weighting (a sort of averaging) to prevent abrupt artifacts:
+    \begin{lstlisting}[language=python, label={lst:overlap_add}, breaklines=true, caption={Overlap-add processing}]
+# overlap and add
+output_block[:len(prev_tail)] = 0.5 * (output_block[:len(prev_tail)] + prev_tail)
+    \end{lstlisting}
+    
+    \item \textbf{Real-time Processing Loop:} The main processing loop continuously:
+    \begin{enumerate}
+        \item Reads the current scaling factor $\alpha$ from the slider value
+        \item Retrieves the next input block from the frames array
+        \item Processes the block with the current scaling factor
+        \item Applies overlap-add with the previous block's tail
+        \item Clips and writes the output chunk to the audio stream
+        \item Stores the tail portion for the next iteration
+        \item Cycles through frames in a circular manner for continuous playback using the modulo operator
+    \end{enumerate}
+    
+    \begin{lstlisting}[language=python, label={lst:main_loop}, breaklines=true, caption={Main real-time processing loop}]
+prev_tail = np.zeros(BLOCKLEN - Hop)
+frames = frames_to_process_with_hops(all_samples, BLOCKLEN, OVERLAP_FACTOR)
+frame_idx = 0
+while CONTINUE:
+    root.update()
+    
+    # get slider value in real time
+    alpha_from_slider = alpha.get()
+    
+    # get next input frame  
+    input_block = frames[frame_idx]
+    
+    # process the scaled 
+    output_block = process_block_fft_scaling(input_block, alpha_from_slider)
+
+    # overlap and add
+    output_block[:len(prev_tail)] = 0.5 * (output_block[:len(prev_tail)] + prev_tail)
+
+    # clipping
+    output_chunk = np.clip(output_block[:Hop], -MAXVALUE, MAXVALUE)
+    output_chunk = np.around(output_chunk).astype(np.int16)
+    stream.write(output_chunk.tobytes())
+    
+    prev_tail = output_block[Hop:]
+    # increment to the next frame (circular)
+    frame_idx = (frame_idx + 1) % len(frames)
+    \end{lstlisting}
+    
+    \item \textbf{Parameters:} For the solution, I implmented the following main parameters after a bit of trial and error:
+    \begin{itemize}
+        \item Block size: 1024 samples
+        \item Overlap factor: 0.5 
+        \item Scaling factor range: 0.5 to 2.0
+    \end{itemize}
+\end{itemize}
+
+\pagebreak
+
+\section*{Addendum}
+
+The implementation successfully achieves real-time frequency scaling while preserving the harmonic structure of the input signal. The key design choices include:
+
+\begin{itemize}
+    \item \textbf{50\% Overlap:} The 50\% overlap factor was chosen through experimentation to balance between smooth transitions and computational efficiency. This overlap ensures that block boundary artifacts are minimized.
+    
+    \item \textbf{Linear Interpolation:} Linear interpolation in the frequency domain provides a good balance between quality and computational cost. More sophisticated interpolation methods (e.g., cubic) could be used for potentially better quality at the cost of increased computation.
+    
+    \item \textbf{Circular Frame Buffer:} The frames are processed in a circular manner, allowing for continuous playback of the audio file while maintaining real-time responsiveness to slider changes.
+    
+    \item \textbf{Clipping Protection:} The output is clipped to prevent overflow, which is essential for maintaining audio quality and preventing distortion when the scaling factor causes amplitude changes.
+\end{itemize}
+
+The implementation demonstrates effective use of overlapping block processing with FFT-based frequency domain manipulation for real-time audio processing applications.
+
+
+\end{document}
