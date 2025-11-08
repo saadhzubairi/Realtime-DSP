@@ -4,6 +4,10 @@ import numpy as np
 import os
 import math
 import tkinter as Tk
+import matplotlib
+from matplotlib import pyplot
+from matplotlib import animation
+
 
 # function to make a preprocessed list of frames for overlapped block processing
 def frames_to_process_with_hops(all_frames, block_size, overlap_factor):
