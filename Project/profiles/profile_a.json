@@ -1,0 +1,19 @@
+{
+  "name": "Profile A",
+  "created_at": "2025-12-08T19:22:37.561910",
+  "sample_rate": 16000,
+  "frame_size": 320,
+  "hop_size": 160,
+  "duration_s": 4.992,
+  "f0_median_hz": 142.36203066778177,
+  "f0_p05_hz": 113.71770252945512,
+  "f0_p95_hz": 182.51424098342665,
+  "f0_std_log": 0.19322744024054164,
+  "voiced_ratio": 0.3072289156626506,
+  "envelope_fft_size": 512,
+  "lpc_order": 16,
+  "lpc_gain": 0.010419489182391028,
+  "formant_f1_median": 663.8622043958917,
+  "formant_f2_median": 1942.551555636182,
+  "formant_f3_median": 3286.9707366850075
+}
