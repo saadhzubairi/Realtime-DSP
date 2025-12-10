@@ -139,10 +139,15 @@ def extract_profile(
     lpc_coeffs_list = []
     lpc_gains = []
     
-    # Process frame by frame
+    # Process frame by frame (skip some frames for speed)
     num_frames = (len(audio) - frame_size) // hop_size + 1
     
-    for i in range(num_frames):
+    # Skip every N frames to speed up extraction (still get enough samples)
+    # For 5 seconds at 16kHz with 10ms hop = 500 frames
+    # Processing every 4th frame = 125 frames, still plenty for statistics
+    skip_factor = max(1, num_frames // 150)  # Target ~150 frames max
+    
+    for i in range(0, num_frames, skip_factor):
         start = i * hop_size
         end = start + frame_size
         

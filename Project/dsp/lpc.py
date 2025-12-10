@@ -20,7 +20,7 @@ class LPCResult:
 
 def autocorrelation(x: np.ndarray, order: int) -> np.ndarray:
     """
-    Compute autocorrelation coefficients.
+    Compute autocorrelation coefficients using FFT for speed.
     
     Args:
         x: Input signal
@@ -30,12 +30,18 @@ def autocorrelation(x: np.ndarray, order: int) -> np.ndarray:
         Autocorrelation values [r(0), r(1), ..., r(order)]
     """
     n = len(x)
-    r = np.zeros(order + 1)
     
-    for k in range(order + 1):
-        r[k] = np.sum(x[:n-k] * x[k:])
+    # FFT-based autocorrelation (much faster for large order)
+    fft_size = 1
+    while fft_size < 2 * n:
+        fft_size *= 2
     
-    return r
+    x_padded = np.zeros(fft_size)
+    x_padded[:n] = x
+    X = np.fft.rfft(x_padded)
+    r_full = np.fft.irfft(X * np.conj(X))
+    
+    return r_full[:order + 1].astype(np.float64)
 
 
 def levinson_durbin(r: np.ndarray, order: int) -> Tuple[np.ndarray, float]:

@@ -57,6 +57,11 @@ from .transform import (
     TransformState,
 )
 
+from .pitch_shift import (
+    VariableDelayPitchShifter,
+    SimplePitchShifter,
+)
+
 __all__ = [
     # STFT
     'STFT',
@@ -106,4 +111,8 @@ __all__ = [
     # Transform
     'VoiceTransformPipeline',
     'TransformState',
+    
+    # Pitch Shifting
+    'VariableDelayPitchShifter',
+    'SimplePitchShifter',
 ]

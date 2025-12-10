@@ -58,25 +58,41 @@ class YINPitchDetector:
     
     def _difference_function(self, x: np.ndarray) -> np.ndarray:
         """
-        Compute the difference function d_t(tau).
+        Compute the difference function d_t(tau) using FFT-based autocorrelation.
         
         d_t(tau) = sum_{j=0}^{W-1} (x_j - x_{j+tau})^2
+        
+        Uses: d(tau) = r(0) + r_shifted(0) - 2*r(tau)
+        where r is autocorrelation computed via FFT.
         """
         n = len(x)
         
-        # Use autocorrelation-based computation for efficiency
-        # d(tau) = r(0) + r'(0) - 2*r(tau)
-        # where r(tau) is the autocorrelation and r'(0) is shifted
+        # FFT-based autocorrelation (much faster than O(n^2) loops)
+        # Pad to next power of 2 for efficiency
+        fft_size = 1
+        while fft_size < 2 * n:
+            fft_size *= 2
         
-        for tau in range(self.tau_max + 1):
-            if tau == 0:
-                self._diff[0] = 0
-            else:
-                # Direct computation (slower but clearer)
-                diff_sum = 0.0
-                for j in range(self.frame_size - tau):
-                    diff_sum += (x[j] - x[j + tau]) ** 2
-                self._diff[tau] = diff_sum
+        # Compute autocorrelation via FFT
+        x_padded = np.zeros(fft_size)
+        x_padded[:n] = x
+        X = np.fft.rfft(x_padded)
+        r_full = np.fft.irfft(X * np.conj(X))
+        r = r_full[:self.tau_max + 1]
+        
+        # Compute cumulative energy for shifted windows
+        x_sq = x ** 2
+        cum_sum = np.cumsum(x_sq)
+        
+        # d(tau) = r(0) + r_shifted(0) - 2*r(tau)
+        # r(0) = sum(x^2) for first window
+        # r_shifted(0) = sum(x[tau:]^2) for shifted window
+        self._diff[0] = 0
+        for tau in range(1, min(self.tau_max + 1, n)):
+            # Energy of x[0:n-tau] and x[tau:n]
+            e1 = cum_sum[n - tau - 1] if n - tau > 0 else 0
+            e2 = cum_sum[n - 1] - cum_sum[tau - 1] if tau > 0 else cum_sum[n - 1]
+            self._diff[tau] = e1 + e2 - 2 * r[tau]
         
         return self._diff
     

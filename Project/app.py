@@ -90,26 +90,22 @@ class DSPWorker(threading.Thread):
         self._queue_depth = 0
     
     def run(self):
-        """Main worker loop."""
+        """Main worker loop - DIRECT processing, no frame accumulation."""
         self._running = True
         dsp_logger.info("DSP Worker started")
         
         hop_size = self.audio_config.hop_size
-        frame_size = self.audio_config.frame_size
-        
-        # Accumulator for input samples (for overlap)
-        input_accumulator = np.zeros(0, dtype=np.float32)
         
         while self._running:
             if self._paused:
                 time.sleep(0.01)
                 continue
             
-            # Check if we have enough input samples
+            # Check if we have samples to process
             available = self.input_buffer.count
             
             if available >= hop_size:
-                # Get hop_size samples
+                # Get samples directly
                 samples = self.input_buffer.pop(hop_size)
                 
                 if samples is not None:
@@ -117,34 +113,23 @@ class DSPWorker(threading.Thread):
                     with self._metrics_lock:
                         self._input_level_db = calculate_level_db(samples)
                     
-                    # Accumulate samples for frame processing
-                    input_accumulator = np.concatenate([input_accumulator, samples])
+                    # Time the processing
+                    self.frame_timer.start()
                     
-                    # Process if we have a full frame
-                    if len(input_accumulator) >= frame_size:
-                        # Extract frame
-                        frame = input_accumulator[:frame_size]
-                        
-                        # Shift accumulator by hop (keep overlap)
-                        input_accumulator = input_accumulator[hop_size:]
-                        
-                        # Time the processing
-                        self.frame_timer.start()
-                        
-                        # Process through pipeline (includes OLA)
-                        output_samples, metrics = self.transform_pipeline.process_with_overlap_add(frame)
-                        
-                        self.frame_timer.stop()
-                        
-                        # Update metrics
-                        with self._metrics_lock:
-                            self._current_f0 = metrics.get('f0', 0.0)
-                            self._is_voiced = metrics.get('is_voiced', False)
-                            self._output_level_db = calculate_level_db(output_samples)
-                            self._queue_depth = self.output_buffer.count // hop_size
-                        
-                        # Push to output buffer
-                        self.output_buffer.push(output_samples)
+                    # Process directly through pipeline - NO accumulation
+                    output_samples, metrics = self.transform_pipeline.process_direct(samples)
+                    
+                    self.frame_timer.stop()
+                    
+                    # Update metrics
+                    with self._metrics_lock:
+                        self._current_f0 = metrics.get('f0', 0.0)
+                        self._is_voiced = metrics.get('is_voiced', False)
+                        self._output_level_db = calculate_level_db(output_samples)
+                        self._queue_depth = self.output_buffer.count // hop_size
+                    
+                    # Push to output buffer immediately
+                    self.output_buffer.push(output_samples)
             else:
                 # Wait a bit if no samples available
                 time.sleep(0.001)
