@@ -24,7 +24,10 @@ class SmoothPitchShifter:
         self.sample_rate = sample_rate
         self.pitch_ratio = 1.0
         self._target_ratio = 1.0
-        self.ratio_smoothing = 0.6  # more aggressive smoothing
+        self.fast_alpha = 0.7
+        self.slow_alpha = 0.4
+        self.fast_threshold = 0.08  # log-domain delta for fast smoothing
+        self.dead_zone = 0.01  # ratios within +/-1% treated as unity
         
         # Larger overlap window (60% of 160-sample hop by default)
         self.overlap_size = 96
@@ -55,8 +58,13 @@ class SmoothPitchShifter:
             return x
         
         # Smooth pitch ratio to limit jumps
-        alpha = self.ratio_smoothing
-        self.pitch_ratio = alpha * self._target_ratio + (1 - alpha) * self.pitch_ratio
+        target_ratio = 1.0 if abs(self._target_ratio - 1.0) < self.dead_zone else self._target_ratio
+        log_target = float(np.log(target_ratio))
+        log_current = float(np.log(max(self.pitch_ratio, 1e-6)))
+        delta = abs(log_target - log_current)
+        alpha = self.fast_alpha if delta > self.fast_threshold else self.slow_alpha
+        log_ratio = alpha * log_target + (1 - alpha) * log_current
+        self.pitch_ratio = float(np.exp(log_ratio))
         ratio = self.pitch_ratio
         
         if abs(ratio - 1.0) < 0.01:

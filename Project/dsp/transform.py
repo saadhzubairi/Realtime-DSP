@@ -11,7 +11,14 @@ import threading
 from .voice_profile import VoiceProfile
 from .pitch_shift import SmoothPitchShifter
 from .formant import FormantWarpProcessor
-from utils.config import TransformConfig, AudioConfig
+from .pitch import PitchTracker
+from utils.config import (
+    TransformConfig,
+    AudioConfig,
+    F0_MIN,
+    F0_MAX,
+    YIN_THRESHOLD
+)
 
 
 @dataclass  
@@ -55,6 +62,17 @@ class VoiceTransformPipeline:
             fft_size=audio_config.fft_size
         )
         self._profile_formant_warp = 1.0
+        
+        # Pitch tracking for diagnostics
+        self.pitch_tracker = PitchTracker(
+            sample_rate=audio_config.sample_rate,
+            frame_size=audio_config.frame_size,
+            hop_size=audio_config.hop_size,
+            f0_min=F0_MIN,
+            f0_max=F0_MAX,
+            threshold=YIN_THRESHOLD
+        )
+        self._pitch_frame = np.zeros(audio_config.frame_size, dtype=np.float32)
     
     def set_profiles(self, source: VoiceProfile, target: VoiceProfile):
         """Set source and target voice profiles."""
@@ -73,6 +91,9 @@ class VoiceTransformPipeline:
         self.pitch_shifter.reset()
         if self.formant_processor:
             self.formant_processor.reset()
+        if self.pitch_tracker:
+            self.pitch_tracker.reset()
+        self._pitch_frame.fill(0)
     
     def _compute_pitch_ratio(self) -> float:
         """Compute pitch ratio from profiles."""
@@ -103,7 +124,17 @@ class VoiceTransformPipeline:
             pitch_strength = self.config.pitch_strength
             formant_strength = self.config.formant_strength
         
-        metrics = {'f0': 0.0, 'is_voiced': True}
+        # Update pitch tracking frame buffer
+        frame_len = len(self._pitch_frame)
+        shift = min(len(samples), frame_len)
+        self._pitch_frame = np.roll(self._pitch_frame, -shift)
+        self._pitch_frame[-shift:] = samples[-shift:]
+        pitch_estimate = self.pitch_tracker.process_frame(self._pitch_frame)
+        
+        metrics = {
+            'f0': pitch_estimate.f0,
+            'is_voiced': pitch_estimate.is_voiced
+        }
         
         # Compute target pitch ratio
         base_ratio = self._compute_pitch_ratio()
