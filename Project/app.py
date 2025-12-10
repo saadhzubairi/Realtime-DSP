@@ -88,6 +88,11 @@ class DSPWorker(threading.Thread):
         self._input_level_db = -60.0
         self._output_level_db = -60.0
         self._queue_depth = 0
+        
+        self.min_input_threshold = int(self.audio_config.hop_size * 2)
+        self._max_input_threshold = self.input_buffer.capacity // 2
+        self._starvation_count = 0
+        self.prefill_frames = 12
     
     def run(self):
         """Main worker loop - DIRECT processing, no frame accumulation."""
@@ -104,7 +109,8 @@ class DSPWorker(threading.Thread):
             # Check if we have samples to process
             available = self.input_buffer.count
             
-            if available >= hop_size:
+            if available >= max(hop_size, self.min_input_threshold):
+                self._starvation_count = 0
                 # Get samples directly
                 samples = self.input_buffer.pop(hop_size)
                 
@@ -132,8 +138,17 @@ class DSPWorker(threading.Thread):
                     self.output_buffer.push(output_samples)
             else:
                 # Wait a bit if no samples available
+                self._starvation_count += 1
+                if (
+                    self._starvation_count > 20
+                    and self.min_input_threshold < self._max_input_threshold
+                ):
+                    self.min_input_threshold += hop_size
+                    dsp_logger.debug(
+                        f"Increasing min input threshold to {self.min_input_threshold} samples"
+                    )
                 time.sleep(0.001)
-        
+    
         dsp_logger.info("DSP Worker stopped")
     
     def start_processing(self):
@@ -181,6 +196,18 @@ class DSPWorker(threading.Thread):
     @property
     def dsp_time_max_ms(self) -> float:
         return self.frame_timer.max_ms
+    
+    def prefill_output_buffer(self, frames: int = None):
+        """Push silence into the output buffer to prime playback."""
+        if self.output_buffer is None:
+            return
+        frames = frames or self.prefill_frames
+        frames = max(frames, 0)
+        if frames == 0:
+            return
+        samples = self.audio_config.hop_size * frames
+        silence = np.zeros(samples, dtype=np.float32)
+        self.output_buffer.push(silence)
 
 
 class VoiceTransformApp:
@@ -366,6 +393,9 @@ class VoiceTransformApp:
         # Start audio stream
         if not self.audio_stream.is_running:
             self.audio_stream.start(passthrough=False)
+            # Prime output buffer with silence before DSP kicks in
+            if self.dsp_worker:
+                self.dsp_worker.prefill_output_buffer()
         
         # Start DSP processing
         self.dsp_worker.start_processing()
