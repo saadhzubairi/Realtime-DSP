@@ -1,266 +1,421 @@
 # Voice Transform - Real-time A→B Voice Conversion
 
-A real-time voice transformation system that converts one person's voice to sound like another's using pitch mapping, spectral envelope matching, and formant warping.
+A real-time voice transformation system that converts one person's voice to sound like another's using pitch shifting based on voice profile analysis.
+
+## Quick Start
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the application
+python app.py
+```
 
 ## Project Structure
 
 ```
 Project/
-├── app.py                 # Main application entry point (Tkinter + threading)
-├── requirements.txt       # Python dependencies
-├── profiles/             # Saved voice profiles
+├── app.py                 # Main application entry point
+│                          # - VoiceTransformApp: Main Tkinter window with 4 tabs
+│                          # - DSPWorker: Background thread for audio processing
+│
+├── requirements.txt       # Python dependencies (numpy, scipy, pyaudio)
+├── profiles/             # Saved voice profiles (.npz + .json)
 │
 ├── audio/                # Audio I/O layer
-│   ├── __init__.py
-│   ├── pyaudio_io.py     # PyAudio stream, device enumeration, callback
-│   └── ringbuffer.py     # Lock-free ring buffers for thread communication
+│   ├── pyaudio_io.py     # AudioDeviceManager: Device enumeration
+│   │                     # AudioStream: PyAudio callback-based streaming
+│   ├── ringbuffer.py     # RingBuffer: Thread-safe circular buffer
+│   └── recorder.py       # AudioRecorder: WAV file recording
 │
-├── dsp/                  # Signal processing modules
-│   ├── __init__.py
-│   ├── stft.py          # STFT/ISTFT, windowing, overlap-add
-│   ├── pitch.py         # YIN pitch detection, pitch tracking & mapping
-│   ├── lpc.py           # LPC analysis, spectral envelope estimation
-│   ├── formant.py       # Formant estimation & frequency warping
-│   ├── voice_profile.py # Profile extraction & serialization
-│   └── transform.py     # Live A→B transform pipeline
+├── dsp/                  # Digital Signal Processing modules
+│   ├── pitch_shift.py    # SmoothPitchShifter: Real-time pitch shifting via resampling
+│   ├── transform.py      # VoiceTransformPipeline: Main DSP pipeline
+│   ├── voice_profile.py  # VoiceProfile: Feature extraction and storage
+│   ├── pitch.py          # YINPitchDetector: F0 estimation using YIN algorithm
+│   ├── lpc.py            # LPC analysis for spectral envelope
+│   ├── formant.py        # FormantTracker: Formant frequency estimation
+│   └── stft.py           # STFT/ISTFT utilities
 │
 ├── ui/                   # Tkinter UI tabs
-│   ├── __init__.py
-│   ├── devices.py       # Tab 1: Device selection, buffer config
-│   ├── calibration.py   # Tab 2: Voice recording & profile extraction
-│   ├── live.py          # Tab 3: Real-time transform controls
-│   └── diagnostics.py   # Tab 4: Performance monitoring, debug
+│   ├── devices.py        # Tab 1: Device selection, buffer configuration
+│   ├── calibration.py    # Tab 2: Voice recording & profile extraction
+│   ├── live.py           # Tab 3: Real-time transform controls
+│   └── diagnostics.py    # Tab 4: Performance monitoring
 │
 └── utils/                # Utilities
-    ├── __init__.py
-    ├── config.py        # Configuration constants & dataclasses
-    ├── logging_utils.py # Thread-safe logging
-    └── timing.py        # High-resolution timing & latency estimation
+    ├── config.py         # AudioConfig, TransformConfig, constants
+    ├── logging_utils.py  # Thread-safe logging utilities
+    └── timing.py         # FrameTimer, LatencyEstimator
 ```
 
 ## Architecture
 
 ### Threading Model
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Main Thread (Tkinter UI)                     │
-│  - Handles user interaction                                      │
-│  - Polls shared state every 30-60ms via after()                 │
-│  - Updates meters, plots, logs                                   │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                    ┌───────────┴───────────┐
-                    ▼                       ▼
-┌─────────────────────────────┐ ┌─────────────────────────────────┐
-│   Audio I/O Thread          │ │    DSP Worker Thread            │
-│   (PyAudio callback)        │ │                                 │
-│                             │ │  - Pulls frames from input      │
-│  - Must be FAST             │ │    ring buffer                  │
-│  - Copy input → ring buffer │ │  - Runs transform pipeline      │
-│  - Pop output if available  │ │  - Pushes to output ring buffer │
-│  - Else play silence        │ │                                 │
-└─────────────────────────────┘ └─────────────────────────────────┘
-         │                                  ▲
-         │       ┌─────────────────────┐    │
-         └──────►│  Input Ring Buffer  │────┘
-                 └─────────────────────┘
-                 ┌─────────────────────┐
-         ┌──────►│ Output Ring Buffer  │◄────┐
-         │       └─────────────────────┘     │
-         └───────────────────────────────────┘
-```
-
-### Data Flow
+The application uses three threads to achieve real-time audio processing:
 
 ```
-Mic → Input Ring Buffer → Frame Extraction (overlap)
-                              ↓
-                    ┌─────────────────────┐
-                    │   DSP Pipeline      │
-                    │                     │
-                    │  1. STFT Analysis   │
-                    │  2. Pitch Detection │
-                    │  3. Pitch Mapping   │
-                    │  4. Envelope Match  │
-                    │  5. Formant Warp    │
-                    │  6. ISTFT Synthesis │
-                    └─────────────────────┘
-                              ↓
-           Overlap-Add Reconstruction → Output Ring Buffer → Speakers
+┌──────────────────────────────────────────────────────────────────────┐
+│                      MAIN THREAD (Tkinter UI)                        │
+│  • Handles user interaction (buttons, sliders)                       │
+│  • Polls shared state every 50ms via after() callbacks               │
+│  • Updates level meters, status displays                             │
+└──────────────────────────────────────────────────────────────────────┘
+                                  │
+              ┌───────────────────┴───────────────────┐
+              ▼                                       ▼
+┌────────────────────────────┐         ┌────────────────────────────────┐
+│  AUDIO I/O THREAD          │         │     DSP WORKER THREAD          │
+│  (PyAudio callback)        │         │                                │
+│                            │         │  while running:                │
+│  def callback():           │         │    samples = input_buf.pop()   │
+│    # MUST be fast!         │         │    output = pipeline.process() │
+│    input_buf.push(data)    │         │    output_buf.push(output)     │
+│    return output_buf.pop() │         │                                │
+└────────────────────────────┘         └────────────────────────────────┘
+              │                                       ▲
+              │     ┌─────────────────────────┐       │
+              └────►│   INPUT RING BUFFER     │───────┘
+                    └─────────────────────────┘
+                    ┌─────────────────────────┐
+              ┌────►│   OUTPUT RING BUFFER    │◄──────┐
+              │     └─────────────────────────┘       │
+              └───────────────────────────────────────┘
 ```
 
-## Configuration
+### Data Flow (Simplified)
 
-### Target Constraints (in `utils/config.py`)
+```
+Microphone
+    │
+    ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ Input RingBuf   │────►│  DSP Pipeline   │────►│ Output RingBuf  │
+│ (thread-safe)   │     │                 │     │ (thread-safe)   │
+└─────────────────┘     │  Pitch Shift    │     └─────────────────┘
+                        │  via Resampling │              │
+                        └─────────────────┘              ▼
+                                                    Speakers
+```
 
-| Parameter | Default | Notes |
-|-----------|---------|-------|
-| Sample Rate | 16 kHz | CPU-light; 48 kHz for higher fidelity |
-| Frame Size | 20 ms (320 samples @ 16kHz) | Analysis frame |
-| Hop Size | 10 ms (160 samples @ 16kHz) | 50% overlap |
-| Buffer Size | 256 samples | PyAudio callback buffer |
-| LPC Order | 16 | ~fs/1000 + 4 |
-| FFT Size | 512 | For spectral analysis |
+## Core Classes
+
+### Main Application (`app.py`)
+
+#### `VoiceTransformApp`
+The main Tkinter application window. Creates and manages:
+- Audio device manager and stream
+- Ring buffers for inter-thread communication
+- DSP worker thread
+- Four UI tabs (Devices, Calibration, Live, Diagnostics)
+
+#### `DSPWorker(threading.Thread)`
+Background thread that processes audio:
+```python
+def run(self):
+    while running:
+        samples = input_buffer.pop(hop_size)      # Get audio chunk
+        output, metrics = pipeline.process_direct(samples)  # Process
+        output_buffer.push(output)                # Send to output
+```
+
+---
+
+### Audio Layer (`audio/`)
+
+#### `RingBuffer` (`ringbuffer.py`)
+Thread-safe circular buffer for passing audio between threads:
+- `push(data)` - Add samples to buffer
+- `pop(count)` - Remove and return samples
+- `count` - Number of samples available
+- Uses numpy arrays for efficiency
+
+#### `AudioDeviceManager` (`pyaudio_io.py`)
+Enumerates and manages audio devices:
+- `get_input_devices()` - List microphones
+- `get_output_devices()` - List speakers
+- `get_default_input_device()` / `get_default_output_device()`
+
+#### `AudioStream` (`pyaudio_io.py`)
+PyAudio stream wrapper with callback mode:
+- Runs in separate thread (PyAudio manages this)
+- Callback pushes input to ring buffer, pops output from ring buffer
+- Supports passthrough mode (direct loopback) or processing mode
+
+#### `AudioRecorder` (`recorder.py`)
+Records audio to WAV file in a separate thread:
+- Used by calibration tab for profile recording
+- Non-blocking recording with callback for completion
+
+---
+
+### DSP Layer (`dsp/`)
+
+#### `SmoothPitchShifter` (`pitch_shift.py`)
+**The core pitch shifting algorithm.** Uses direct resampling for zero-latency processing:
+
+```python
+def process(self, input_samples):
+    # Smooth pitch ratio to avoid clicks
+    self.pitch_ratio = 0.3 * target + 0.7 * self.pitch_ratio
+    
+    # Resample: ratio > 1 = higher pitch, ratio < 1 = lower pitch
+    out_indices = np.arange(n) * ratio
+    output = linear_interpolate(input, out_indices)
+    
+    # Crossfade with previous block to smooth boundaries
+    output[:32] = crossfade(prev_tail, output[:32])
+    
+    return output  # Same length as input, no latency!
+```
+
+#### `VoiceTransformPipeline` (`transform.py`)
+Coordinates the transformation:
+1. Computes pitch ratio from source/target profiles
+2. Applies pitch strength scaling
+3. Calls pitch shifter
+4. Applies wet/dry mix
+
+```python
+def process_direct(self, samples):
+    ratio = target_f0 / source_f0  # From profiles
+    ratio = 1.0 + (ratio - 1.0) * strength  # Apply strength
+    
+    self.pitch_shifter.set_pitch_ratio(ratio)
+    shifted = self.pitch_shifter.process(samples)
+    
+    output = wet_dry * shifted + (1 - wet_dry) * samples
+    return output
+```
+
+#### `VoiceProfile` (`voice_profile.py`)
+Stores voice characteristics extracted during calibration:
+- `f0_median_hz` - Median fundamental frequency
+- `f0_p05_hz`, `f0_p95_hz` - Pitch range (5th/95th percentile)
+- `formant_f1/f2/f3_median` - Formant frequencies
+- `envelope_log_mag` - Spectral envelope
+- `lpc_coefficients` - LPC analysis coefficients
+
+#### `extract_profile()` (`voice_profile.py`)
+Analyzes recorded audio to create a VoiceProfile:
+1. Process audio frame by frame
+2. Detect pitch using YIN algorithm (optimized with FFT)
+3. Extract formants using LPC analysis
+4. Compute statistics (median, percentiles)
+5. Store averaged spectral envelope
+
+#### `YINPitchDetector` (`pitch.py`)
+Fundamental frequency (F0) estimation using the YIN algorithm:
+- Uses FFT-based autocorrelation for efficiency
+- Returns F0 in Hz and confidence score
+- Distinguishes voiced vs unvoiced frames
+
+#### `compute_lpc()` (`lpc.py`)
+Linear Predictive Coding for spectral envelope:
+- Uses Levinson-Durbin recursion
+- FFT-based autocorrelation for speed
+- Returns LPC coefficients and gain
+
+---
+
+### UI Layer (`ui/`)
+
+#### `DevicesTab` (`devices.py`)
+**Tab 1: Setup**
+- Input/output device dropdowns
+- Buffer size configuration
+- Sample rate selection
+- Microphone level meter
+- Test loopback button
+
+#### `CalibrationTab` (`calibration.py`)
+**Tab 2: Calibration**
+- Record Profile A (your voice) and Profile B (target voice)
+- 5-second recordings with countdown overlay
+- Automatic feature extraction after recording
+- Displays extracted features (F0, formants, etc.)
+- Save/load profiles to disk
+
+#### `LiveTab` (`live.py`)
+**Tab 3: Live Transform**
+- Start/Stop stream buttons
+- Enable Transform toggle
+- Pitch strength slider (0-100%)
+- Wet/dry mix slider
+- Real-time level meters
+- Underrun/overrun counters
+
+#### `DiagnosticsTab` (`diagnostics.py`)
+**Tab 4: Diagnostics**
+- Latency estimation
+- CPU usage per frame
+- Debug log viewer
+- Performance metrics
+
+---
+
+### Utilities (`utils/`)
+
+#### `AudioConfig` (`config.py`)
+Audio system configuration:
+```python
+@dataclass
+class AudioConfig:
+    sample_rate: int = 16000
+    buffer_size: int = 256
+    frame_size: int = 320   # 20ms at 16kHz
+    hop_size: int = 160     # 10ms at 16kHz
+```
+
+#### `TransformConfig` (`config.py`)
+Transform parameters (adjustable via UI):
+```python
+@dataclass
+class TransformConfig:
+    wet_dry: float = 1.0           # 0=dry, 1=wet
+    pitch_strength: float = 1.0    # 0=bypass, 1=full transform
+    formant_strength: float = 0.0  # Not currently used
+    envelope_strength: float = 0.0 # Not currently used
+```
+
+## Configuration Constants
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `DEFAULT_SAMPLE_RATE` | 16000 Hz | Audio sample rate |
+| `DEFAULT_BUFFER_SIZE` | 256 samples | PyAudio callback buffer |
+| `FRAME_SIZE_MS` | 20 ms | Analysis frame size |
+| `HOP_SIZE_MS` | 10 ms | Frame hop (50% overlap) |
+| `LPC_ORDER` | 16 | LPC analysis order |
+| `YIN_THRESHOLD` | 0.15 | Voiced/unvoiced threshold |
+| `F0_MIN` / `F0_MAX` | 50-500 Hz | Pitch detection range |
 
 ## UI Tabs
 
-### Tab 1: Setup
-- Input/output device selection
-- Sample rate (16/48 kHz)
-- Buffer size slider (128-1024)
-- Mic level meter with clip indicator
-- Test loopback button
+### Tab 1: Setup (Devices)
+- Select input device (microphone)
+- Select output device (speakers/headphones)
+- Adjust buffer size (lower = less latency, higher = more stable)
+- Test with loopback (hear your mic through speakers)
+- Monitor input level with clip indicator
 
 ### Tab 2: Calibration
-- Record Profile A (source voice)
-- Record Profile B (target voice)
-- 5-10 second recordings with countdown
-- Waveform preview and playback
-- Feature extraction and summary:
-  - F0 median, 5th/95th percentile range
-  - Formant estimates (F1, F2, F3)
-  - Spectral envelope
-- Save/load profiles (.npz + .json)
+- **Record Profile A**: Record 5 seconds of your natural voice
+- **Record Profile B**: Record 5 seconds of the target voice
+- Automatic feature extraction (pitch, formants, spectral envelope)
+- View extracted features summary
+- Save/load profiles for later use
 
 ### Tab 3: Live Transform
-- Start/Stop stream
-- Profile display
-- Transform controls (with EMA smoothing):
-  - Wet/Dry mix (0-100%)
-  - Pitch mapping strength (0-100%)
-  - Formant mapping strength (0-100%)
-  - Envelope match strength (0-100%)
-- Unvoiced handling mode (bypass / noise-shaped)
-- Real-time meters:
-  - Input/output levels (dB)
-  - Estimated F0 (Hz)
-  - Underrun/overrun counters
-  - Queue depth
+- **Start/Stop Stream**: Enable real-time audio processing
+- **Enable Transform**: Toggle voice transformation on/off
+- **Pitch Strength**: How much to shift pitch (0% = no change, 100% = full A→B)
+- **Wet/Dry Mix**: Blend between original and transformed voice
+- Real-time monitoring:
+  - Input/output level meters
+  - Current pitch display
+  - Buffer underrun/overrun counters
 
 ### Tab 4: Diagnostics
-- Latency estimate (ms)
-- CPU time per frame (avg/max)
-- DSP CPU load percentage
-- Debug bypass toggles:
-  - Bypass pitch mapping
-  - Bypass envelope matching
-  - Bypass formant warping
-- Live spectrogram
-- Event log viewer
+- Performance metrics (latency, CPU usage)
+- Debug logging
+- System status
+
+## How the Pitch Shifting Works
+
+The pitch shifter uses **direct resampling** for zero-latency operation:
+
+### Algorithm
+1. **Input**: Block of audio samples (e.g., 160 samples = 10ms at 16kHz)
+2. **Calculate read indices**: `out_indices = [0, ratio, 2*ratio, 3*ratio, ...]`
+3. **Linear interpolation**: Read samples at fractional positions
+4. **Crossfade**: Blend with previous block's tail (32 samples) to avoid clicks
+5. **Output**: Same number of samples as input (no buffering delay)
+
+### Example
+- Source voice: 120 Hz (male)
+- Target voice: 200 Hz (female)
+- Pitch ratio: 200/120 = 1.67
+- Effect: Voice pitch raised by ~9 semitones
+
+```
+ratio > 1.0  →  Higher pitch (read faster, compress waveform)
+ratio < 1.0  →  Lower pitch (read slower, stretch waveform)
+ratio = 1.0  →  No change (bypass)
+```
 
 ## Voice Profile Features
 
-Each profile contains:
+Each VoiceProfile contains:
 
 | Feature | Description |
 |---------|-------------|
-| `f0_median_hz` | Median fundamental frequency |
-| `f0_p05_hz` / `f0_p95_hz` | 5th/95th percentile F0 |
+| `f0_median_hz` | Median fundamental frequency (pitch) |
+| `f0_p05_hz` / `f0_p95_hz` | 5th/95th percentile F0 (pitch range) |
 | `f0_std_log` | F0 standard deviation (log domain) |
 | `voiced_ratio` | Proportion of voiced frames |
 | `envelope_log_mag` | Average spectral envelope (log magnitude) |
 | `lpc_coefficients` | Average LPC coefficients |
 | `formant_f1/f2/f3_median` | Median formant frequencies |
 
-## DSP Pipeline Stages
+## Usage Workflow
 
-### Stage A: STFT/ISTFT Base Plumbing
-- Overlap-add with 50% overlap
-- Hann window for analysis and synthesis
-- Proper COLA normalization
-
-### Stage B: Pitch Mapping
-- YIN algorithm for F0 estimation
-- Median filtering for smoothing
-- Linear mapping in log-F0 domain:
-  ```
-  p' = μB + (σB/σA) * (p - μA)
-  p_out = (1-strength)*p + strength*p'
-  ```
-
-### Stage C: Spectral Envelope Matching
-- LPC-based envelope estimation per frame
-- Precomputed target envelope from calibration
-- Apply envelope ratio:
-  ```
-  |Y(f)| = |X(f)| * (E_target(f) / E_source(f))^strength
-  ```
-- EMA smoothing to prevent artifacts
-
-### Stage D: Formant Warping
-- Frequency warping of target envelope
-- Warp factor from F1 ratio: `s = F1_target / F1_source`
-- Applied via interpolation: `E_warp(f) = E(f / s)`
-
-### Stage E: Voiced/Unvoiced Handling
-- Bypass processing for unvoiced frames (or reduced strength)
-- Prevents noise amplification
-
-## Milestone Build Order
-
-1. ✅ Device selection UI + loopback passthrough
-2. ✅ Ring buffers + callback stability + meters
-3. ✅ STFT/ISTFT no-op pipeline
-4. ✅ Calibration recording + profile extraction
-5. ✅ Envelope match only
-6. ✅ Pitch mapping only
-7. ✅ Combined pitch + envelope
-8. ✅ Formant warp as envelope warping
-9. ⬜ Diagnostics + profiling + hardening
-
-## Usage
-
-### Installation
-
-```bash
-pip install -r requirements.txt
-```
-
-### Running
-
-```bash
-python app.py
-```
-
-### Workflow
-
-1. **Setup**: Select input/output devices, test with loopback
-2. **Calibrate**: Record 5-10s of your voice (Profile A), then target voice (Profile B)
-3. **Extract**: Click "Extract Profile Features" for each
-4. **Transform**: Go to Live tab, adjust strengths, click Start
+1. **Setup**: Select your microphone and speakers, test with loopback
+2. **Record Profile A**: Record yourself speaking naturally for 5 seconds
+3. **Record Profile B**: Record the target voice (or use a saved profile)
+4. **Go Live**: Switch to Live tab, click "Start Stream", enable transform
+5. **Adjust**: Use the pitch strength slider to control how much transformation is applied
 
 ## Requirements
 
 - Python 3.8+
 - NumPy
 - SciPy
-- PyAudio (requires PortAudio)
+- PyAudio (requires PortAudio system library)
 - tkinter (usually bundled with Python)
+
+### Installing PyAudio
+
+**Windows:**
+```bash
+pip install pyaudio
+```
+
+**macOS:**
+```bash
+brew install portaudio
+pip install pyaudio
+```
+
+**Linux:**
+```bash
+sudo apt-get install portaudio19-dev
+pip install pyaudio
+```
 
 ## Troubleshooting
 
-### Common Issues
-
 | Issue | Cause | Solution |
 |-------|-------|----------|
-| "Robotic" sound | Too-strong envelope ratio | Reduce envelope strength, increase smoothing |
-| "Chipmunk" sound | Pitch shift without formant compensation | Enable formant warping |
-| "Buzzy pumping" | Envelope ratio not smoothed | Increase EMA smoothing alpha |
-| Buffer underruns | DSP too slow | Increase buffer size, reduce sample rate |
-| High latency | Large buffers or queue depth | Reduce buffer size, optimize DSP |
+| No audio output | Wrong device selected | Check Tab 1, select correct output |
+| High latency | Buffer too large | Reduce buffer size in Tab 1 |
+| Audio crackling | Buffer too small | Increase buffer size |
+| No pitch change | Profiles not set | Record/load both Profile A and B |
+| "Chipmunk" sound | Pitch too extreme | Reduce pitch strength slider |
 
-### Validation Checklist
+## File Formats
 
-- [ ] Queue depth stable over time (no drift)
-- [ ] 10-20 minute stress test (no buffer growth/leaks)
-- [ ] A/B test: envelope-only vs pitch-only vs both
-- [ ] Unvoiced bypass vs processed comparison
+### Voice Profiles
+Profiles are saved as two files:
+- `profile_name.npz` - NumPy arrays (envelope, LPC coefficients)
+- `profile_name.json` - Metadata (name, F0 stats, formants)
 
 ## Future Improvements
 
-- [ ] Phase vocoder with identity phase locking
-- [ ] Real-time LPC envelope (replace smoothing)
-- [ ] De-essing and tilt EQ
-- [ ] Output limiter
-- [ ] WORLD vocoder integration for higher quality
+- [ ] Formant-preserving pitch shift (PSOLA or phase vocoder)
+- [ ] Spectral envelope matching  
+- [ ] Real-time spectrogram display
+- [ ] Preset management
+- [ ] Audio file input/output

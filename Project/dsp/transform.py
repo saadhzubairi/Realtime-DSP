@@ -10,6 +10,7 @@ import threading
 
 from .voice_profile import VoiceProfile
 from .pitch_shift import SmoothPitchShifter
+from .formant import FormantWarpProcessor
 from utils.config import TransformConfig, AudioConfig
 
 
@@ -46,11 +47,20 @@ class VoiceTransformPipeline:
         self.pitch_shifter = SmoothPitchShifter(
             sample_rate=audio_config.sample_rate
         )
+        
+        # Formant processor
+        self.formant_processor = FormantWarpProcessor(
+            sample_rate=audio_config.sample_rate,
+            lpc_order=audio_config.lpc_order,
+            fft_size=audio_config.fft_size
+        )
+        self._profile_formant_warp = 1.0
     
     def set_profiles(self, source: VoiceProfile, target: VoiceProfile):
         """Set source and target voice profiles."""
         self.source_profile = source
         self.target_profile = target
+        self._update_formant_warp_from_profiles()
     
     def update_config(self, config: TransformConfig):
         """Update transform configuration."""
@@ -61,6 +71,8 @@ class VoiceTransformPipeline:
         """Reset pipeline state."""
         self.state = TransformState()
         self.pitch_shifter.reset()
+        if self.formant_processor:
+            self.formant_processor.reset()
     
     def _compute_pitch_ratio(self) -> float:
         """Compute pitch ratio from profiles."""
@@ -89,6 +101,7 @@ class VoiceTransformPipeline:
         with self._config_lock:
             wet_dry = self.config.wet_dry
             pitch_strength = self.config.pitch_strength
+            formant_strength = self.config.formant_strength
         
         metrics = {'f0': 0.0, 'is_voiced': True}
         
@@ -104,6 +117,18 @@ class VoiceTransformPipeline:
         self.pitch_shifter.set_pitch_ratio(target_ratio)
         shifted = self.pitch_shifter.process(samples)
         
+        # Optional formant warping
+        if (
+            formant_strength > 0.0
+            and self.formant_processor is not None
+        ):
+            warp_factor = 1.0 + (self._profile_formant_warp - 1.0) * formant_strength
+            shifted = self.formant_processor.process(
+                shifted,
+                warp_factor=warp_factor,
+                mix=formant_strength
+            )
+        
         # Apply wet/dry mix
         if wet_dry < 1.0:
             output = wet_dry * shifted + (1 - wet_dry) * samples
@@ -118,3 +143,24 @@ class VoiceTransformPipeline:
     
     def process_with_overlap_add(self, frame: np.ndarray) -> Tuple[np.ndarray, dict]:
         return self.process_direct(frame)
+
+    def _update_formant_warp_from_profiles(self):
+        """Estimate warp factor from calibrated profile statistics."""
+        ratios = []
+        if self.source_profile and self.target_profile:
+            pairs = [
+                (self.source_profile.formant_f1_median, self.target_profile.formant_f1_median),
+                (self.source_profile.formant_f2_median, self.target_profile.formant_f2_median)
+            ]
+            for src_val, tgt_val in pairs:
+                if src_val > 0 and tgt_val > 0:
+                    ratios.append(tgt_val / src_val)
+        
+        if ratios:
+            warp = float(np.clip(np.median(ratios), 0.8, 1.25))
+        else:
+            warp = 1.0
+        
+        self._profile_formant_warp = warp
+        with self._config_lock:
+            self.config.formant_warp_factor = warp

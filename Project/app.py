@@ -277,7 +277,8 @@ class VoiceTransformApp:
         
         # Calculate buffer sizes
         # Ring buffer should hold several frames worth of samples
-        buffer_samples = config.frame_size * 32
+        safety_margin = 1.25  # Allow extra headroom to reduce underruns
+        buffer_samples = int(config.frame_size * 32 * safety_margin)
         
         self.input_buffer = RingBuffer(buffer_samples)
         self.output_buffer = RingBuffer(buffer_samples)

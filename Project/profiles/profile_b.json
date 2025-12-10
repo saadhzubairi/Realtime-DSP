@@ -1,19 +1,19 @@
 {
   "name": "Profile B",
-  "created_at": "2025-12-10T05:17:26.918515",
+  "created_at": "2025-12-10T12:34:51.865805",
   "sample_rate": 16000,
   "frame_size": 320,
   "hop_size": 160,
   "duration_s": 4.992,
-  "f0_median_hz": 398.12880503487713,
-  "f0_p05_hz": 140.45310918960737,
+  "f0_median_hz": 398.1351940241503,
+  "f0_p05_hz": 274.44350723201546,
   "f0_p95_hz": 500.0,
-  "f0_std_log": 0.5527399102802917,
-  "voiced_ratio": 0.45180722891566266,
+  "f0_std_log": 0.2472412059413716,
+  "voiced_ratio": 0.6204819277108434,
   "envelope_fft_size": 512,
   "lpc_order": 16,
-  "lpc_gain": 0.011047314144475982,
-  "formant_f1_median": 700.0742448651782,
-  "formant_f2_median": 2174.5761890093117,
-  "formant_f3_median": 3578.6290794513407
+  "lpc_gain": 0.04835946038040107,
+  "formant_f1_median": 696.6891266438872,
+  "formant_f2_median": 2460.7467396271977,
+  "formant_f3_median": 3435.968919634607
 }

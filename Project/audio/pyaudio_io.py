@@ -155,6 +155,16 @@ class AudioStream:
         
         # Lock for thread-safe access to metrics
         self._metrics_lock = threading.Lock()
+        
+        # Buffer safety management
+        self._min_output_fill_samples = config.buffer_size * 2
+        self._max_output_fill_samples = max(
+            config.buffer_size * 8,
+            output_buffer.capacity - config.buffer_size
+        )
+        self._needs_prefill = False
+        self._adaptive_buffering = True
+        self._underrun_adaptive_threshold = 3
     
     def _audio_callback(
         self,
@@ -188,6 +198,14 @@ class AudioStream:
             with self._metrics_lock:
                 self._overrun_count += 1
         
+        # Wait for output buffer to have a healthy fill before playback
+        if not self._passthrough_mode and self._needs_prefill:
+            if self._output_buffer.count >= self._min_output_fill_samples:
+                self._needs_prefill = False
+            else:
+                # Feed silence until enough audio is prepared
+                return (np.zeros(frame_count, dtype=np.float32).tobytes(), pyaudio.paContinue)
+        
         # Get output samples
         if self._passthrough_mode:
             # Direct passthrough for testing
@@ -198,8 +216,7 @@ class AudioStream:
             
             if output_samples is None:
                 # Buffer underrun - output silence or passthrough
-                with self._metrics_lock:
-                    self._underrun_count += 1
+                self._handle_underrun()
                 output_samples = np.zeros(frame_count, dtype=np.float32)
         
         # Convert to bytes for output
@@ -228,6 +245,13 @@ class AudioStream:
         # Clear buffers
         self._input_buffer.clear()
         self._output_buffer.clear()
+        
+        # Prefill output buffer with silence to avoid underruns at start
+        if not passthrough:
+            self._prefill_output_buffer(self._min_output_fill_samples)
+            self._needs_prefill = True
+        else:
+            self._needs_prefill = False
         
         # Reset metrics
         with self._metrics_lock:
@@ -308,6 +332,43 @@ class AudioStream:
                 'output_buffer_count': self._output_buffer.count,
             }
 
+
+    def _prefill_output_buffer(self, target_samples: int):
+        """Fill the output buffer with silence up to the requested level."""
+        samples_needed = max(0, min(target_samples, self._output_buffer.capacity) - self._output_buffer.count)
+        if samples_needed > 0:
+            silence = np.zeros(samples_needed, dtype=np.float32)
+            self._output_buffer.push(silence)
+
+    def _handle_underrun(self):
+        """Record underrun and trigger adaptive buffering if needed."""
+        request_prefill = False
+        with self._metrics_lock:
+            self._underrun_count += 1
+            if (
+                self._adaptive_buffering
+                and self._underrun_count % self._underrun_adaptive_threshold == 0
+            ):
+                request_prefill = True
+        
+        if request_prefill:
+            self._increase_prefill_window()
+    
+    def _increase_prefill_window(self):
+        """Increase the minimum fill level as an adaptive response."""
+        if self._passthrough_mode:
+            return
+        
+        new_threshold = min(
+            int(self._min_output_fill_samples * 1.5),
+            self._max_output_fill_samples
+        )
+        
+        if new_threshold > self._min_output_fill_samples:
+            self._min_output_fill_samples = new_threshold
+            self._needs_prefill = True
+            # Allow DSP worker time to fill the larger buffer by padding with silence
+            self._prefill_output_buffer(self._min_output_fill_samples)
 
 def calculate_level_db(samples: np.ndarray, min_db: float = -60.0) -> float:
     """

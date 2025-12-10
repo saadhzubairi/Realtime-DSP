@@ -6,7 +6,13 @@ Provides formant tracking and frequency warping for vocal tract length modificat
 import numpy as np
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
-from .lpc import compute_lpc, lpc_to_spectrum
+from .lpc import (
+    compute_lpc,
+    lpc_to_spectrum,
+    lpc_inverse_filter,
+    lpc_filter,
+    spectrum_to_lpc
+)
 
 
 @dataclass
@@ -274,6 +280,79 @@ def bilinear_warp_envelope(
     
     return warped_envelope.astype(np.float32)
 
+class FormantWarpProcessor:
+    """
+    Lightweight LPC-based formant warp processor for short blocks.
+    
+    Extracts the excitation signal, warps the spectral envelope, and resynthesizes
+    the frame to keep perceived timbre closer to the target voice.
+    """
+    
+    def __init__(
+        self,
+        sample_rate: int,
+        lpc_order: int,
+        fft_size: int
+    ):
+        self.sample_rate = sample_rate
+        self.lpc_order = lpc_order
+        self.fft_size = fft_size
+        self._analysis_state = np.zeros(lpc_order, dtype=np.float32)
+        self._synthesis_state = np.zeros(lpc_order, dtype=np.float32)
+    
+    def process(
+        self,
+        samples: np.ndarray,
+        warp_factor: float,
+        mix: float = 1.0
+    ) -> np.ndarray:
+        """Apply formant warping to the given block."""
+        if len(samples) == 0 or mix <= 0.0 or abs(warp_factor - 1.0) < 1e-3:
+            return samples.astype(np.float32)
+        
+        # LPC analysis
+        lpc_result = compute_lpc(samples, self.lpc_order)
+        coeffs = lpc_result.coefficients
+        
+        if coeffs is None or len(coeffs) == 0:
+            return samples.astype(np.float32)
+        
+        # Extract excitation / residual
+        residual, self._analysis_state = lpc_inverse_filter(
+            samples,
+            coeffs,
+            state=self._analysis_state
+        )
+        
+        # Warp the envelope
+        envelope = lpc_to_spectrum(
+            coeffs,
+            self.fft_size,
+            gain=max(lpc_result.gain, 1e-4)
+        )
+        warped_env = warp_envelope(envelope, warp_factor, self.sample_rate)
+        warped_coeffs = spectrum_to_lpc(warped_env, self.lpc_order)
+        
+        # Resynthesize with warped envelope
+        warped_output, self._synthesis_state = lpc_filter(
+            residual,
+            warped_coeffs,
+            gain=max(lpc_result.gain, 1e-4),
+            state=self._synthesis_state
+        )
+        
+        if mix >= 1.0:
+            return warped_output.astype(np.float32)
+        
+        return (
+            mix * warped_output.astype(np.float32) +
+            (1.0 - mix) * samples.astype(np.float32)
+        )
+    
+    def reset(self):
+        """Reset filter state."""
+        self._analysis_state.fill(0)
+        self._synthesis_state.fill(0)
 
 class FormantTracker:
     """
