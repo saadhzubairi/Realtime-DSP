@@ -61,6 +61,7 @@ from .pitch_shift import (
     VariableDelayPitchShifter,
     SimplePitchShifter,
 )
+from .phase_vocoder import PhaseVocoderPitchShifter, PhaseVocoderShifter
 
 __all__ = [
     # STFT
@@ -115,4 +116,6 @@ __all__ = [
     # Pitch Shifting
     'VariableDelayPitchShifter',
     'SimplePitchShifter',
+    'PhaseVocoderPitchShifter',
+    'PhaseVocoderShifter',
 ]

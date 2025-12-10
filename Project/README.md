@@ -30,7 +30,7 @@ Project/
 │   └── recorder.py       # AudioRecorder: WAV file recording
 │
 ├── dsp/                  # Digital Signal Processing modules
-│   ├── pitch_shift.py    # SmoothPitchShifter: Real-time pitch shifting via resampling
+│   ├── phase_vocoder.py  # PhaseVocoderPitchShifter: STFT-based pitch shifting
 │   ├── transform.py      # VoiceTransformPipeline: Main DSP pipeline
 │   ├── voice_profile.py  # VoiceProfile: Feature extraction and storage
 │   ├── pitch.py          # YINPitchDetector: F0 estimation using YIN algorithm
@@ -153,22 +153,21 @@ Records audio to WAV file in a separate thread:
 
 ### DSP Layer (`dsp/`)
 
-#### `SmoothPitchShifter` (`pitch_shift.py`)
-**The core pitch shifting algorithm.** Uses direct resampling for zero-latency processing:
+#### `PhaseVocoderPitchShifter` (`phase_vocoder.py`)
+Smoother real-time pitch shifting via STFT + phase vocoder:
 
 ```python
-def process(self, input_samples):
-    # Smooth pitch ratio to avoid clicks
-    self.pitch_ratio = 0.3 * target + 0.7 * self.pitch_ratio
+def process(self, samples):
+    # Phase vocoder analysis/resynthesis
+    stretch = 1.0 / pitch_ratio
+    for frame in stft_frames(samples):
+        inst_phase = expected + principal(phase_diff)
+        phase_acc += inst_phase * stretch
+        frame_out = istft(mag * exp(j*phase_acc))
+        stretched_buffer.append(frame_out_hop)
     
-    # Resample: ratio > 1 = higher pitch, ratio < 1 = lower pitch
-    out_indices = np.arange(n) * ratio
-    output = linear_interpolate(input, out_indices)
-    
-    # Crossfade with previous block to smooth boundaries
-    output[:32] = crossfade(prev_tail, output[:32])
-    
-    return output  # Same length as input, no latency!
+    # Resample stretched audio back to original hop duration
+    return render_resampled_block(len(samples))
 ```
 
 #### `VoiceTransformPipeline` (`transform.py`)
