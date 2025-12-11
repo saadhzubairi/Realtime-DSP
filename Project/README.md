@@ -154,20 +154,16 @@ Records audio to WAV file in a separate thread:
 ### DSP Layer (`dsp/`)
 
 #### `PhaseVocoderPitchShifter` (`phase_vocoder.py`)
-Smoother real-time pitch shifting via STFT + phase vocoder:
+Librosa-powered phase vocoder pitch shifting with rolling context:
 
 ```python
 def process(self, samples):
-    # Phase vocoder analysis/resynthesis
-    stretch = 1.0 / pitch_ratio
-    for frame in stft_frames(samples):
-        inst_phase = expected + principal(phase_diff)
-        phase_acc += inst_phase * stretch
-        frame_out = istft(mag * exp(j*phase_acc))
-        stretched_buffer.append(frame_out_hop)
-    
-    # Resample stretched audio back to original hop duration
-    return render_resampled_block(len(samples))
+    n_steps = 12 * log2(pitch_ratio)
+    window = concat(context, hop)
+    shifted = librosa.effects.pitch_shift(window, sr, n_steps)
+    output = shifted[-hop_size:]
+    update_context(hop)
+    return overlap_mix(output)
 ```
 
 #### `VoiceTransformPipeline` (`transform.py`)
@@ -373,6 +369,7 @@ Each VoiceProfile contains:
 - NumPy
 - SciPy
 - PyAudio (requires PortAudio system library)
+- resampy (librosa dependency for pitch shifting)
 - tkinter (usually bundled with Python)
 
 ### Installing PyAudio
