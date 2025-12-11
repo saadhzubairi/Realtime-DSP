@@ -31,12 +31,17 @@ Project/
 │
 ├── dsp/                  # Digital Signal Processing modules
 │   ├── psola.py          # PSOLAPitchShifter: Pitch-synchronous overlap-add shifter
+│   ├── mel.py            # MelFeatureExtractor: log-mel features for vocoder
+│   ├── phase_vocoder.py  # Alternate phase-vocoder shifter (legacy)
 │   ├── transform.py      # VoiceTransformPipeline: Main DSP pipeline
 │   ├── voice_profile.py  # VoiceProfile: Feature extraction and storage
 │   ├── pitch.py          # YINPitchDetector: F0 estimation using YIN algorithm
 │   ├── lpc.py            # LPC analysis for spectral envelope
 │   ├── formant.py        # FormantTracker: Formant frequency estimation
 │   └── stft.py           # STFT/ISTFT utilities
+│
+├── neural/               # Neural synthesis modules
+│   └── vocoder.py        # WaveRNNVocoder: neural waveform decoder
 │
 ├── ui/                   # Tkinter UI tabs
 │   ├── devices.py        # Tab 1: Device selection, buffer configuration
@@ -91,13 +96,13 @@ The application uses three threads to achieve real-time audio processing:
 Microphone
     │
     ▼
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ Input RingBuf   │────►│  DSP Pipeline   │────►│ Output RingBuf  │
-│ (thread-safe)   │     │                 │     │ (thread-safe)   │
-└─────────────────┘     │  Pitch Shift    │     └─────────────────┘
-                        │  via Resampling │              │
-                        └─────────────────┘              ▼
-                                                    Speakers
+┌─────────────────┐     ┌──────────────────────────────┐     ┌─────────────────┐
+│ Input RingBuf   │────►│ DSP + Analysis + Neural Core │────►│ Output RingBuf  │
+│ (thread-safe)   │     │  • PSOLA pitch & formants    │     │ (thread-safe)   │
+└─────────────────┘     │  • Log-mel feature encoder   │     └─────────────────┘
+                        │  • WaveRNN neural vocoder    │              │
+                        └──────────────────────────────┘              ▼
+                                                            Speakers
 ```
 
 ## Core Classes
@@ -166,6 +171,30 @@ def process(self, samples):
         segment = extract_window(samples, center=a, length=2*period)
         output.add(segment, center=s)
     return output[:len(samples)]
+```
+
+#### `MelFeatureExtractor` (`mel.py`)
+Creates log-mel frames that feed the neural vocoder:
+
+```python
+mel = MelFeatureExtractor(
+    sample_rate=16000,
+    n_fft=1024,
+    hop_length=256,
+    n_mels=80
+)
+frame = mel.process_block(audio_block)  # returns log-mel vector
+```
+
+### Neural Layer (`neural/`)
+
+#### `WaveRNNVocoder` (`neural/vocoder.py`)
+Thin wrapper around torchaudio's pretrained WaveRNN for high quality synthesis:
+
+```python
+vocoder = WaveRNNVocoder(sample_rate=16000, hop_length=256, mel_bins=80)
+mel_frame = mel_extractor.process_block(pitched_audio)
+output = vocoder.synthesize(mel_frame)
 ```
 
 #### `VoiceTransformPipeline` (`transform.py`)
@@ -371,6 +400,8 @@ Each VoiceProfile contains:
 - NumPy
 - SciPy
 - PyAudio (requires PortAudio system library)
+- PyTorch 2.x
+- Torchaudio 2.x
 - tkinter (usually bundled with Python)
 
 ### Installing PyAudio

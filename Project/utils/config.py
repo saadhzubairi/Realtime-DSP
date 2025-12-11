@@ -136,6 +136,7 @@ class TransformConfig:
     formant_strength: float = 0.0     # 0.0 = no formant mapping
     envelope_strength: float = 0.0    # 0.0 = no envelope matching
     unvoiced_mode: str = 'bypass'     # 'bypass' or 'noise_shaped'
+    use_neural_vocoder: bool = False  # enable WaveRNN backend when available
     
     # Computed warp factor from calibration
     formant_warp_factor: float = 1.0
@@ -186,6 +187,7 @@ def save_config(config: AppState, path: str):
             'formant_strength': config.transform_config.formant_strength,
             'envelope_strength': config.transform_config.envelope_strength,
             'unvoiced_mode': config.transform_config.unvoiced_mode,
+            'use_neural_vocoder': config.transform_config.use_neural_vocoder,
         }
     }
     with open(path, 'w') as f:

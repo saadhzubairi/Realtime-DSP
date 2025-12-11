@@ -162,6 +162,23 @@ class LiveTab(ttk.Frame):
         unvoiced_combo.bind('<<ComboboxSelected>>', self._on_unvoiced_changed)
         ttk.Label(unvoiced_frame, text="How to process unvoiced segments", foreground='gray').pack(side=tk.LEFT, padx=10)
         
+        vocoder_frame = ttk.Frame(controls_frame)
+        vocoder_frame.pack(fill=tk.X, pady=5)
+        self.use_vocoder_var = tk.BooleanVar(value=False)
+        vocoder_cb = ttk.Checkbutton(
+            vocoder_frame,
+            text="Enable Neural Vocoder (WaveRNN)",
+            variable=self.use_vocoder_var,
+            command=self._on_vocoder_toggle
+        )
+        vocoder_cb.pack(side=tk.LEFT)
+        self.use_vocoder_var.set(self.config.use_neural_vocoder)
+        ttk.Label(
+            vocoder_frame,
+            text="Higher CPU/GPU load. Falls back to DSP if unavailable.",
+            foreground='gray'
+        ).pack(side=tk.LEFT, padx=10)
+        
         # Real-time meters
         meters_frame = ttk.LabelFrame(main_frame, text="Real-time Meters", padding="10")
         meters_frame.pack(fill=tk.X, pady=10)
@@ -260,6 +277,11 @@ class LiveTab(ttk.Frame):
     def _on_unvoiced_changed(self, event):
         """Handle unvoiced mode change."""
         self.config.unvoiced_mode = self.unvoiced_var.get()
+        self._notify_config_changed()
+    
+    def _on_vocoder_toggle(self):
+        """Handle neural vocoder enable/disable."""
+        self.config.use_neural_vocoder = self.use_vocoder_var.get()
         self._notify_config_changed()
     
     def _on_start(self):

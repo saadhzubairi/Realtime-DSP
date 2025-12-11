@@ -393,9 +393,6 @@ class VoiceTransformApp:
         # Start audio stream
         if not self.audio_stream.is_running:
             self.audio_stream.start(passthrough=False)
-            # Prime output buffer with silence before DSP kicks in
-            if self.dsp_worker:
-                self.dsp_worker.prefill_output_buffer()
         
         # Start DSP processing
         self.dsp_worker.start_processing()

@@ -12,6 +12,8 @@ from .voice_profile import VoiceProfile
 from .psola import PSOLAPitchShifter
 from .formant import FormantWarpProcessor
 from .pitch import PitchTracker
+from .mel import MelFeatureExtractor
+from neural import WaveRNNVocoder
 from utils.config import (
     TransformConfig,
     AudioConfig,
@@ -19,6 +21,7 @@ from utils.config import (
     F0_MAX,
     YIN_THRESHOLD
 )
+from utils.logging_utils import dsp_logger
 
 
 @dataclass  
@@ -75,6 +78,25 @@ class VoiceTransformPipeline:
             threshold=YIN_THRESHOLD
         )
         self._pitch_frame = np.zeros(audio_config.frame_size, dtype=np.float32)
+        
+        self.mel_extractor = MelFeatureExtractor(
+            sample_rate=audio_config.sample_rate,
+            n_fft=1024,
+            hop_length=audio_config.hop_size,
+            n_mels=80
+        )
+        self._vocoder_enabled = False
+        try:
+            self.vocoder = WaveRNNVocoder(
+                sample_rate=audio_config.sample_rate,
+                hop_length=audio_config.hop_size,
+                mel_bins=80
+            )
+            self._vocoder_enabled = True
+        except Exception as exc:
+            self.vocoder = None
+            self._vocoder_enabled = False
+            dsp_logger.error(f"Neural vocoder unavailable: {exc}")
     
     def set_profiles(self, source: VoiceProfile, target: VoiceProfile):
         """Set source and target voice profiles."""
@@ -96,6 +118,10 @@ class VoiceTransformPipeline:
         if self.pitch_tracker:
             self.pitch_tracker.reset()
         self._pitch_frame.fill(0)
+        if self.mel_extractor:
+            self.mel_extractor.reset()
+        if self.vocoder and hasattr(self.vocoder, "prev_tail"):
+            self.vocoder.prev_tail = np.zeros_like(self.vocoder.prev_tail)
     
     def _compute_pitch_ratio(self) -> float:
         """Compute pitch ratio from profiles."""
@@ -125,6 +151,7 @@ class VoiceTransformPipeline:
             wet_dry = self.config.wet_dry
             pitch_strength = self.config.pitch_strength
             formant_strength = self.config.formant_strength
+            use_neural_vocoder = getattr(self.config, 'use_neural_vocoder', False)
         
         # Update pitch tracking frame buffer
         frame_len = len(self._pitch_frame)
@@ -162,11 +189,29 @@ class VoiceTransformPipeline:
                 mix=formant_strength
             )
         
+        neural_output = shifted
+        if (
+            use_neural_vocoder
+            and self._vocoder_enabled
+            and self.vocoder is not None
+        ):
+            try:
+                mel_frame = self.mel_extractor.process_block(shifted)
+                neural_output = self.vocoder.synthesize(mel_frame)
+                metrics['neural_vocoder'] = True
+            except Exception as exc:  # pylint: disable=broad-except
+                dsp_logger.error(f"Neural vocoder synthesis failed: {exc}")
+                self._vocoder_enabled = False
+                metrics['neural_vocoder'] = False
+                neural_output = shifted
+        else:
+            metrics['neural_vocoder'] = False
+        
         # Apply wet/dry mix
         if wet_dry < 1.0:
-            output = wet_dry * shifted + (1 - wet_dry) * samples
+            output = wet_dry * neural_output + (1 - wet_dry) * samples
         else:
-            output = shifted
+            output = neural_output
         
         return output.astype(np.float32), metrics
     
