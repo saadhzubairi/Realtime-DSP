@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import threading
 
 from .voice_profile import VoiceProfile
-from .phase_vocoder import PhaseVocoderPitchShifter
+from .psola import PSOLAPitchShifter
 from .formant import FormantWarpProcessor
 from .pitch import PitchTracker
 from utils.config import (
@@ -50,8 +50,8 @@ class VoiceTransformPipeline:
         # State
         self.state = TransformState()
         
-        # Phase vocoder pitch shifter
-        self.pitch_shifter = PhaseVocoderPitchShifter(
+        # PSOLA pitch shifter
+        self.pitch_shifter = PSOLAPitchShifter(
             sample_rate=audio_config.sample_rate,
             hop_size=audio_config.hop_size,
             frame_size=audio_config.frame_size

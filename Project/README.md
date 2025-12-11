@@ -30,7 +30,7 @@ Project/
 │   └── recorder.py       # AudioRecorder: WAV file recording
 │
 ├── dsp/                  # Digital Signal Processing modules
-│   ├── phase_vocoder.py  # PhaseVocoderPitchShifter: STFT-based pitch shifting
+│   ├── psola.py          # PSOLAPitchShifter: Pitch-synchronous overlap-add shifter
 │   ├── transform.py      # VoiceTransformPipeline: Main DSP pipeline
 │   ├── voice_profile.py  # VoiceProfile: Feature extraction and storage
 │   ├── pitch.py          # YINPitchDetector: F0 estimation using YIN algorithm
@@ -153,17 +153,19 @@ Records audio to WAV file in a separate thread:
 
 ### DSP Layer (`dsp/`)
 
-#### `PhaseVocoderPitchShifter` (`phase_vocoder.py`)
-Librosa-powered phase vocoder pitch shifting with rolling context:
+#### `PSOLAPitchShifter` (`psola.py`)
+Pitch-synchronous overlap-add that uses YIN pitch detection to reposition pitch pulses:
 
 ```python
 def process(self, samples):
-    n_steps = 12 * log2(pitch_ratio)
-    window = concat(context, hop)
-    shifted = librosa.effects.pitch_shift(window, sr, n_steps)
-    output = shifted[-hop_size:]
-    update_context(hop)
-    return overlap_mix(output)
+    period = estimate_period_yin(samples)
+    analysis_marks = np.arange(half_period, len(samples), period)
+    synth_period = period / pitch_ratio
+    synth_marks = np.arange(analysis_marks[0], len(samples), synth_period)
+    for a, s in zip(analysis_marks, synth_marks):
+        segment = extract_window(samples, center=a, length=2*period)
+        output.add(segment, center=s)
+    return output[:len(samples)]
 ```
 
 #### `VoiceTransformPipeline` (`transform.py`)
@@ -369,7 +371,6 @@ Each VoiceProfile contains:
 - NumPy
 - SciPy
 - PyAudio (requires PortAudio system library)
-- resampy (librosa dependency for pitch shifting)
 - tkinter (usually bundled with Python)
 
 ### Installing PyAudio

@@ -62,6 +62,7 @@ from .pitch_shift import (
     SimplePitchShifter,
 )
 from .phase_vocoder import PhaseVocoderPitchShifter, PhaseVocoderShifter
+from .psola import PSOLAPitchShifter, PSOLA_PitchShifter
 
 __all__ = [
     # STFT
@@ -118,4 +119,6 @@ __all__ = [
     'SimplePitchShifter',
     'PhaseVocoderPitchShifter',
     'PhaseVocoderShifter',
+    'PSOLAPitchShifter',
+    'PSOLA_PitchShifter',
 ]

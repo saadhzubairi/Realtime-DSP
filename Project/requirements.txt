@@ -2,10 +2,10 @@
 numpy>=1.20.0
 scipy>=1.7.0
 pyaudio>=0.2.11
-resampy>=0.4.2
 
-# Optional - for enhanced pitch detection (not required for core functionality)
-librosa>=0.9.0
+# Optional - for enhanced pitch detection / alternate shifters
+# librosa>=0.9.0
+# resampy>=0.4.2
 
 # Optional - for higher quality voice conversion (heavier)
 # pyworld>=0.3.0
