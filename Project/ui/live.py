@@ -167,17 +167,26 @@ class LiveTab(ttk.Frame):
         self.use_vocoder_var = tk.BooleanVar(value=False)
         vocoder_cb = ttk.Checkbutton(
             vocoder_frame,
-            text="Enable Neural Vocoder (WaveRNN)",
+            text="Enable Neural Vocoder (Griffin-Lim)",
             variable=self.use_vocoder_var,
             command=self._on_vocoder_toggle
         )
         vocoder_cb.pack(side=tk.LEFT)
         self.use_vocoder_var.set(self.config.use_neural_vocoder)
+        
+        # Status indicator for neural vocoder
+        self.vocoder_status_label = ttk.Label(
+            vocoder_frame,
+            text="",
+            foreground='gray'
+        )
+        self.vocoder_status_label.pack(side=tk.LEFT, padx=10)
+        
         ttk.Label(
             vocoder_frame,
-            text="Higher CPU/GPU load. Falls back to DSP if unavailable.",
+            text="Real-time mel-to-waveform synthesis",
             foreground='gray'
-        ).pack(side=tk.LEFT, padx=10)
+        ).pack(side=tk.LEFT, padx=5)
         
         # Real-time meters
         meters_frame = ttk.LabelFrame(main_frame, text="Real-time Meters", padding="10")
@@ -322,12 +331,23 @@ class LiveTab(ttk.Frame):
         is_voiced: bool = False,
         underruns: int = 0,
         overruns: int = 0,
-        queue_depth: int = 0
+        queue_depth: int = 0,
+        neural_vocoder_active: bool = False
     ):
         """Update real-time meters (optimized - only updates changed values)."""
         # Cache previous values to avoid unnecessary UI updates
         if not hasattr(self, '_prev_meters'):
             self._prev_meters = {}
+        
+        # Update vocoder status indicator
+        if hasattr(self, 'vocoder_status_label'):
+            if self.use_vocoder_var.get():
+                if neural_vocoder_active:
+                    self.vocoder_status_label.config(text="● Active", foreground='green')
+                else:
+                    self.vocoder_status_label.config(text="○ Ready", foreground='gray')
+            else:
+                self.vocoder_status_label.config(text="", foreground='gray')
         
         # Input level - only update if changed by more than 1dB
         input_pct = max(0, min(100, (input_level_db + 60) / 60 * 100))

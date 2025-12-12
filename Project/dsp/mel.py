@@ -11,6 +11,7 @@ class MelFeatureExtractor:
     Computes log-mel spectrogram frames from streaming audio.
     
     Designed to feed neural vocoders such as WaveRNN/LPCNet.
+    Uses proper overlap-add buffering for streaming operation.
     """
     
     def __init__(
@@ -31,35 +32,57 @@ class MelFeatureExtractor:
         
         self.window = get_window("hann", n_fft, fftbins=True).astype(np.float32)
         self.mel_filter_bank = self._create_mel_filter()
+        
+        # Circular buffer for streaming - hold n_fft samples
         self.buffer = np.zeros(n_fft, dtype=np.float32)
-        self.buffer_index = 0
+        self.buffer_fill = 0  # How many valid samples in buffer
+        
+        # Previous mel frame for smoothing
+        self._prev_mel = None
+        self._smoothing_alpha = 0.3
     
     def process_block(self, block: np.ndarray) -> np.ndarray:
         """
         Push a block of audio samples and return most recent mel frame.
+        
+        Handles variable-sized input blocks properly.
         """
-        block = block.astype(np.float32)
-        needed = self.n_fft - self.buffer_index
+        block = np.asarray(block, dtype=np.float32)
         
-        if len(block) >= needed:
-            self.buffer[self.buffer_index:] = block[:needed]
-            frame = self._compute_mel(self.buffer.copy())
-            remainder = block[needed:]
-            if len(remainder) >= self.hop_length:
-                self.buffer[:-self.hop_length] = self.buffer[self.hop_length:]
-                self.buffer[-self.hop_length:] = remainder[:self.hop_length]
-                self.buffer_index = self.n_fft - self.hop_length
-            else:
-                self.buffer[:-len(remainder)] = self.buffer[len(remainder):]
-                self.buffer[-len(remainder):] = remainder
-                self.buffer_index = self.n_fft - len(remainder)
-            return frame
+        if len(block) == 0:
+            # Return previous or zeros
+            if self._prev_mel is not None:
+                return self._prev_mel
+            return np.zeros(self.n_mels, dtype=np.float32)
         
-        self.buffer[self.buffer_index:self.buffer_index + len(block)] = block
-        self.buffer_index += len(block)
-        if self.buffer_index >= self.n_fft:
-            self.buffer_index = self.n_fft - self.hop_length
-        return self._compute_mel(self.buffer.copy())
+        # Add new samples to buffer
+        if len(block) >= self.n_fft:
+            # Block is larger than FFT size - just use the last n_fft samples
+            self.buffer[:] = block[-self.n_fft:]
+            self.buffer_fill = self.n_fft
+        else:
+            # Shift buffer and add new samples
+            shift = len(block)
+            self.buffer[:-shift] = self.buffer[shift:]
+            self.buffer[-shift:] = block
+            self.buffer_fill = min(self.buffer_fill + shift, self.n_fft)
+        
+        # Compute mel if we have enough samples
+        if self.buffer_fill >= self.n_fft // 2:
+            mel = self._compute_mel(self.buffer.copy())
+            
+            # Apply temporal smoothing
+            if self._prev_mel is not None:
+                mel = (self._smoothing_alpha * mel + 
+                       (1 - self._smoothing_alpha) * self._prev_mel)
+            
+            self._prev_mel = mel.copy()
+            return mel
+        else:
+            # Not enough samples yet
+            if self._prev_mel is not None:
+                return self._prev_mel
+            return np.zeros(self.n_mels, dtype=np.float32)
     
     def _compute_mel(self, frame: np.ndarray) -> np.ndarray:
         frame = frame * self.window
@@ -106,4 +129,5 @@ class MelFeatureExtractor:
     def reset(self):
         """Reset internal buffer."""
         self.buffer.fill(0)
-        self.buffer_index = 0
+        self.buffer_fill = 0
+        self._prev_mel = None

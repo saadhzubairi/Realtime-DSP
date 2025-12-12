@@ -120,8 +120,8 @@ class VoiceTransformPipeline:
         self._pitch_frame.fill(0)
         if self.mel_extractor:
             self.mel_extractor.reset()
-        if self.vocoder and hasattr(self.vocoder, "prev_tail"):
-            self.vocoder.prev_tail = np.zeros_like(self.vocoder.prev_tail)
+        if self.vocoder and hasattr(self.vocoder, "reset"):
+            self.vocoder.reset()
     
     def _compute_pitch_ratio(self) -> float:
         """Compute pitch ratio from profiles."""
@@ -197,11 +197,24 @@ class VoiceTransformPipeline:
         ):
             try:
                 mel_frame = self.mel_extractor.process_block(shifted)
-                neural_output = self.vocoder.synthesize(mel_frame)
+                vocoder_output = self.vocoder.synthesize(mel_frame)
+                
+                # Ensure output length matches input for proper buffer handling
+                if len(vocoder_output) != len(samples):
+                    if len(vocoder_output) < len(samples):
+                        # Pad to match
+                        neural_output = np.zeros(len(samples), dtype=np.float32)
+                        neural_output[:len(vocoder_output)] = vocoder_output
+                    else:
+                        # Truncate to match
+                        neural_output = vocoder_output[:len(samples)]
+                else:
+                    neural_output = vocoder_output
+                    
                 metrics['neural_vocoder'] = True
             except Exception as exc:  # pylint: disable=broad-except
                 dsp_logger.error(f"Neural vocoder synthesis failed: {exc}")
-                self._vocoder_enabled = False
+                # Don't disable permanently - just use DSP fallback for this frame
                 metrics['neural_vocoder'] = False
                 neural_output = shifted
         else:

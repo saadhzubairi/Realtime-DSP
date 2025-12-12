@@ -88,6 +88,7 @@ class DSPWorker(threading.Thread):
         self._input_level_db = -60.0
         self._output_level_db = -60.0
         self._queue_depth = 0
+        self._neural_vocoder_active = False
         
         self.min_input_threshold = int(self.audio_config.hop_size * 2)
         self._max_input_threshold = self.input_buffer.capacity // 2
@@ -132,6 +133,7 @@ class DSPWorker(threading.Thread):
                         self._current_f0 = metrics.get('f0', 0.0)
                         self._is_voiced = metrics.get('is_voiced', False)
                         self._output_level_db = calculate_level_db(output_samples)
+                        self._neural_vocoder_active = metrics.get('neural_vocoder', False)
                         self._queue_depth = self.output_buffer.count // hop_size
                     
                     # Push to output buffer immediately
@@ -188,6 +190,11 @@ class DSPWorker(threading.Thread):
     def queue_depth(self) -> int:
         with self._metrics_lock:
             return self._queue_depth
+    
+    @property
+    def neural_vocoder_active(self) -> bool:
+        with self._metrics_lock:
+            return self._neural_vocoder_active
     
     @property
     def dsp_time_avg_ms(self) -> float:
@@ -458,7 +465,8 @@ class VoiceTransformApp:
                 is_voiced=self.dsp_worker.is_voiced,
                 underruns=self.audio_stream.underrun_count if self.audio_stream else 0,
                 overruns=self.audio_stream.overrun_count if self.audio_stream else 0,
-                queue_depth=self.dsp_worker.queue_depth
+                queue_depth=self.dsp_worker.queue_depth,
+                neural_vocoder_active=self.dsp_worker.neural_vocoder_active
             )
             
             # Update diagnostics
