@@ -1,0 +1,415 @@
+\documentclass[11pt]{article}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{listings}
+
+
+\topmargin=-0.45in
+\evensidemargin=0in
+\oddsidemargin=0in
+\textwidth=6.5in
+\textheight=9.0in
+\headsep=0.25in
+\renewcommand{\thesubsection}{\alph{subsection})}
+\renewcommand\lstlistingname{Snippet}
+\renewcommand\lstlistlistingname{}
+
+\usepackage{xcolor}
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codeorange}{rgb}{1,0.49,0}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.96}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegray},
+    keywordstyle=\color{codeorange},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codegreen},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    xleftmargin=10pt,
+}
+
+\lstset{style=mystyle}
+% Title and Author Customization
+
+% --------------------
+% Start from here
+% --------------------
+
+\title{
+    \vspace{3em}
+    \textbf{Digital Signal Processing Lab}\\
+    Final Project Report\\
+    Voice Conversion using WORLD Vocoder\\
+    \vspace{1em}
+}
+\author{
+    Saad Zubairi \\ 
+    shz2020 \\
+    \vspace{1em}
+}
+\vspace{1em}
+\date{December 19th, 2025}
+
+\begin{document}
+\maketitle	
+
+\pagebreak
+
+% --------------------
+% Body
+% --------------------
+\begin{center}
+\begin{minipage}{0.85\textwidth}
+\small
+\section*{Abstract}
+The final project implements a real-time voice conversion system that shifts pitch and formants of Speaker A to match Speaker B using the WORLD Vocoder. Calibration records both speakers, extracts median pitch and formant statistics, and computes scaling values for live conversion. The live pipeline streams audio from the mic, processes blocks in a background thread, and synthesizes transformed speech. The implementation is modular and thread-safe, separating audio I/O, DSP, and UI control.
+\end{minipage}
+\end{center}
+
+\section{Introduction}
+This voice conversion project tries to change a speaker's pitch and timbre so it sounds more like another person, but still keeps the speech clear enough to understand. Basically, the idea is to take Speaker A and make them sound like Speaker B in real time, by shifting their fundamental frequency (F0) and also the formant structure, and it does this with a calibration step first to figure out what each speaker sounds like, then it runs live and keeps processing audio blocks. The software is built to be modular and uses thread-safe streaming, and you get direct control over pitch and formant shifts, so it's pretty flexible, and user can experiment with different voices.
+
+\section{Background and why WORLD}
+The WORLD vocoder structure represents speech using three components:
+
+\begin{itemize}
+    \item \textbf{The fundamental frequency (F0):} The rate of vocal fold vibration, perceived as pitch.
+    \item \textbf{Spectral envelope:} Represents the resonant characteristics of the vocal tract, shaping the timbre.
+    \item \textbf{Aperiodicity measure:} Captures noise components in the speech signal (could be breathiness or the s,f,and h sounds).
+\end{itemize}
+  
+
+For this project, we use the following for the anlaysis that works within the WORLD vocoder setup:
+
+\begin{itemize}
+    \item \textbf{DIO and StoneMask (Pitch Estimation):} DIO quickly estimates the fundamental frequency (F0) by searching for periodicity in the waveform. StoneMask refines this F0 track using spectral information, improving accuracy in voiced regions.
+    \item \textbf{CheapTrick (Spectral Envelope Estimation):} CheapTrick extracts the spectral envelope, modeling vocal tract resonances. It uses a smoothed log spectrum for efficient and high-quality envelope estimation, capturing timbre and formant structure.
+    \item \textbf{D4C (Aperiodicity Estimation):} D4C measures aperiodicity for each frame, distinguishing voiced and unvoiced sounds. This helps model breathiness and fricatives, making synthesis sound more natural.
+\end{itemize}
+
+After analysis, the system modifies F0 and the spectral envelope to achieve the desired voice conversion. Pitch shifting is implemented by scaling voiced F0 values, while formant shifting is implemented by remapping the spectral envelope bins.
+
+\pagebreak
+
+\section{System Overview}
+The project is divided into the following modules:
+\begin{itemize}
+    \item \texttt{app.py}: main application, calibration workflow, live controls, and worker thread.
+    \item \texttt{audio/recorder.py}: audio recording and playback for calibration.
+    \item \texttt{audio/pyaudio\_io.py}: real-time audio streaming using a callback.
+    \item \texttt{audio/ringbuffer.py}: thread-safe ring buffers for audio blocks.
+    \item \texttt{dsp/world\_vocoder.py}: WORLD analysis, modification, and synthesis.
+    \item \texttt{dsp/voice\_profile.py}: extraction and storage of speaker profiles.
+\end{itemize}
+
+Of course, for debugging purposes and keeping the parameters context, a utility package was also used following some standard boilerplate python practices (not directly relevant to the DSP implementation).
+
+\section{Implementation}
+\subsection{Voice Calibration and Parameter Mapping}
+During calibration, the app quickly records two five-second samples, one for Profile A and one for Profile B, and then automatically extracts the median F0 and formant values from both. It actually computes the pitch shift by comparing the median F0s (in semitones), and the formant shift by taking the ratio of the average F1 and F2 medians. The values, of course, are clipped so they don't go out of range, but sometimes the results can still be a bit off if the recordings aren't clean or if someone talks unusually during calibration. \\
+\\
+Here's what the screen looks like during the initial calibration step:
+
+\begin{center}
+    \includegraphics[scale=0.5]{screenshots/Initial Screen Calibration.png}    
+\end{center}
+
+
+\begin{lstlisting}[language=Python, label={lst:params}, breaklines=true, caption={Pitch and formant mapping from two voice profiles (app.py).}]
+def calculate_transform_params(profile_a: VoiceProfile, profile_b: VoiceProfile) -> dict:
+    """Calculate pitch and formant shift from two voice profiles."""
+    if profile_a.f0_median_hz > 0 and profile_b.f0_median_hz > 0:
+        f0_ratio = profile_b.f0_median_hz / profile_a.f0_median_hz
+        pitch_shift = 12 * np.log2(f0_ratio)
+    else:
+        pitch_shift = 0.0
+    
+    formants_a = []
+    formants_b = []
+    
+    if profile_a.formant_f1_median > 0 and profile_b.formant_f1_median > 0:
+        formants_a.append(profile_a.formant_f1_median)
+        formants_b.append(profile_b.formant_f1_median)
+    
+    if profile_a.formant_f2_median > 0 and profile_b.formant_f2_median > 0:
+        formants_a.append(profile_a.formant_f2_median)
+        formants_b.append(profile_b.formant_f2_median)
+    
+    if formants_a and formants_b:
+        avg_formant_a = np.mean(formants_a)
+        avg_formant_b = np.mean(formants_b)
+        formant_shift = avg_formant_b / avg_formant_a
+    else:
+        formant_shift = 1.0
+    
+    pitch_shift = np.clip(pitch_shift, -12, 12)
+    formant_shift = np.clip(formant_shift, 0.5, 2.0)
+    
+    return {
+        'pitch_shift': float(pitch_shift),
+        'formant_shift': float(formant_shift)
+    }
+\end{lstlisting}
+
+\pagebreak
+
+\subsection{WORLD Analysis and Synthesis}
+The WORLD analysis and synthesis, which are performed by the \texttt{WorldVocoder} class using PyWorld, are typically carried out in a way that the F0, spectral envelope, and aperiodicity are automatically extracted during the analysis stage, and then the synthesis stage is executed so that audio is reconstructed from those parameters.
+\begin{lstlisting}[language=Python, label={lst:world_analysis}, breaklines=true, caption={WORLD analysis and synthesis (dsp/world\_vocoder.py).}]
+    def analyze(self, audio: np.ndarray) -> WorldParams:
+        """Analyze audio to extract WORLD parameters."""
+        audio = audio.astype(np.float64)
+        
+        f0, t = pw.dio(audio, self.sample_rate, frame_period=self.frame_period)
+        f0 = pw.stonemask(audio, f0, t, self.sample_rate)
+        
+        sp = pw.cheaptrick(audio, f0, t, self.sample_rate)
+        ap = pw.d4c(audio, f0, t, self.sample_rate)
+        
+        return WorldParams(
+            f0=f0,
+            sp=sp,
+            ap=ap,
+            sample_rate=self.sample_rate,
+            frame_period=self.frame_period
+        )
+    
+    def synthesize(self, params: WorldParams) -> np.ndarray:
+        """Synthesize audio from WORLD parameters."""
+        audio = pw.synthesize(
+            params.f0,
+            params.sp,
+            params.ap,
+            params.sample_rate,
+            params.frame_period
+        )
+        return audio.astype(np.float32)
+\end{lstlisting}
+
+After recording the voices, the calibration screen displays the extracted statistics for both profiles, along with the computed pitch and formant shifts:
+
+\begin{center}
+    \includegraphics[scale=0.8]{screenshots/Recorded.png}    
+\end{center}
+
+\pagebreak
+
+\subsection{Pitch and Formant Modification}
+Pitch shifting is performed by scaling the voiced F0 values by a ratio that is computed from the semitone shift, and formant shifting is achieved by remapping the spectral envelope bins according to the desired ratio, so both operations are applied in a way that preserves the remaining WORLD parameters, and a new \texttt{WorldParams} object is consequently returned, effectively ensuring that the transformations are applied consistently and efficiently.
+
+\begin{lstlisting}[language=Python, label={lst:pitch_formant}, breaklines=true, caption={Pitch and formant modification (dsp/world\_vocoder.py).}]
+    def shift_pitch(self, params: WorldParams, semitones: float) -> WorldParams:
+        """Shift pitch by semitones."""
+        ratio = 2.0 ** (semitones / 12.0)
+        
+        new_f0 = params.f0.copy()
+        voiced = new_f0 > 0
+        new_f0[voiced] = new_f0[voiced] * ratio
+        
+        return WorldParams(
+            f0=new_f0,
+            sp=params.sp,
+            ap=params.ap,
+            sample_rate=params.sample_rate,
+            frame_period=params.frame_period
+        )
+    
+    def shift_formants(self, params: WorldParams, shift_ratio: float) -> WorldParams:
+        """Shift formants (spectral envelope)."""
+        sp = params.sp
+        new_sp = np.zeros_like(sp)
+        
+        freq_bins = sp.shape[1]
+        
+        for i in range(sp.shape[0]):
+            for j in range(freq_bins):
+                src_idx = int(j / shift_ratio)
+                if 0 <= src_idx < freq_bins:
+                    new_sp[i, j] = sp[i, src_idx]
+                else:
+                    new_sp[i, j] = sp[i, -1]
+        
+        return WorldParams(
+            f0=params.f0,
+            sp=new_sp,
+            ap=params.ap,
+            sample_rate=params.sample_rate,
+            frame_period=params.frame_period
+        )
+\end{lstlisting}
+
+The calculated pitch and formant shifts are displayed on the calibration screen after recording as follows:
+
+\begin{center}
+    \includegraphics[scale=0.7]{screenshots/Calculated.png}    
+\end{center}
+
+\pagebreak
+
+\subsection{Real-Time Processing and Thread Safety}
+Live processing runs in a background thread. The worker waits for a full block in the input ring buffer, processes the block with the WORLD vocoder, and pushes the output to the output ring buffer. In my implementation, I found that a block size of \texttt{1024} samples works well for low latency and stable processing. 
+
+\begin{lstlisting}[language=Python, label={lst:worker}, breaklines=true, caption={Background processing thread (app.py).}]
+    def run(self):
+        self._running = True
+        
+        while self._running:
+            if self._paused:
+                time.sleep(0.01)
+                continue
+            
+            available = self.input_buffer.count
+            
+            if available >= self.block_size:
+                samples = self.input_buffer.pop(self.block_size)
+                
+                if samples is not None:
+                    with self._lock:
+                        self._input_level_db = calculate_level_db(samples)
+                    
+                    if self._bypass:
+                        output = samples
+                    else:
+                        output = self.vocoder.process(samples)
+                        with self._lock:
+                            self._process_time_ms = self.vocoder.process_time_ms
+                    
+                    with self._lock:
+                        self._output_level_db = calculate_level_db(output)
+                    
+                    self.output_buffer.push(output)
+            else:
+                time.sleep(0.005)
+\end{lstlisting}
+
+Thread-safe ring buffers are used between the audio callback and the worker thread. Both read and write operations are protected by a lock.
+\begin{lstlisting}[language=Python, label={lst:ringbuffer}, breaklines=true, caption={Thread-safe ring buffer write and read (audio/ringbuffer.py).}]
+    def push(self, data: np.ndarray) -> int:
+        """Push samples into the buffer."""
+        n = len(data)
+        
+        with self._lock:
+            available = self._capacity - self._count
+            n_to_write = min(n, available)
+            
+            if n_to_write == 0:
+                return 0
+            
+            end_space = self._capacity - self._write_idx
+            
+            if n_to_write <= end_space:
+                self._buffer[self._write_idx:self._write_idx + n_to_write] = data[:n_to_write]
+            else:
+                self._buffer[self._write_idx:] = data[:end_space]
+                remaining = n_to_write - end_space
+                self._buffer[:remaining] = data[end_space:n_to_write]
+            
+            self._write_idx = (self._write_idx + n_to_write) % self._capacity
+            self._count += n_to_write
+        
+        return n_to_write
+    
+    def pop(self, n: int) -> Optional[np.ndarray]:
+        """Pop samples from the buffer."""
+        with self._lock:
+            if self._count < n:
+                return None
+            
+            result = np.zeros(n, dtype=self._dtype)
+            end_space = self._capacity - self._read_idx
+            
+            if n <= end_space:
+                result[:] = self._buffer[self._read_idx:self._read_idx + n]
+            else:
+                result[:end_space] = self._buffer[self._read_idx:]
+                remaining = n - end_space
+                result[end_space:] = self._buffer[:remaining]
+            
+            self._read_idx = (self._read_idx + n) % self._capacity
+            self._count -= n
+        
+        return result
+\end{lstlisting}
+
+\section{Realtime conversion interface}
+The live tab provides controls to start/stop processing, adjust pitch and formant shifts, and toggle bypass mode. We can apply the extracted parameters which we got from the calibration step, or also manually adjust them with sliders. The converted voice is then relayed through the speakers in real time. 
+
+\begin{center}
+    \includegraphics[scale=0.4]{screenshots/Live.png}
+\end{center}
+
+\section{Known Issues and Limitations}
+
+During testing and development, several limitations became apparent based on how the system behaved in practice.
+
+\begin{itemize}
+    \item \textbf{Sensitivity during calibration.}  
+    In my testing, I noticed that the calibration step is fairly sensitive to how the speaker talks during the five-second recording. If the speaker varies their pitch too much, speaks very softly, or includes long pauses, the extracted median F0 and formant values can be skewed. When this happens, the resulting pitch or formant shift can sound unnatural during live conversion. I'd recommend adapting a robotic and steady speaking style for the best results.
+
+    \item \textbf{Simplified formant shifting.}  
+    The current formant-shifting approach uses a single global scaling factor derived from average F1 and F2 values. In practice, this works reasonably well for small shifts, but for larger shifts I found that the converted voice can sound slightly muffled or distorted, likely because the spectral envelope is being remapped uniformly rather than preserving detailed formant structure across frequencies.
+
+    \item \textbf{Latency versus stability tradeoff.}  
+    While experimenting with different block sizes, I found that smaller blocks reduce latency but significantly increase CPU load, frequently causing audio dropouts that makes the audio very choppy. A block size of 1024 samples ended up being a reasonable compromise, but this choice is hardware-dependent.
+
+    \item \textbf{Limited robustness across speakers.}  
+    The system works best when converting between two speakers with relatively similar speaking styles. In my testing, applying calibration parameters to voices with very different pitch ranges or vocal characteristics often produced less convincing results, indicating limited generalization beyond the calibrated pair.
+\end{itemize}
+
+\section{Future Work}
+
+I am currently trying to minify the system to run on an embedded platform, like an STM32 board. The plan is to implement a simplified version of this pipeline on an STM microcontroller with a UART interface for microphone input. The board would act as a USB or serial audio device that captures audio, performs real-time pitch and spectral modification, and relays the converted signal back to a host system. A sort of faux audio converter microphone that can be callibrated to sound like diffrent speakers.
+
+
+\pagebreak
+
+\section{Addendum}
+
+This project is structured with the following modular, object-oriented utilities for better future scaling and clarity of implementation:
+\begin{itemize}
+    \item \textbf{Custom Logging:} A custom logging system (\texttt{utils/logging\_utils.py}) which provides structured logs for audio, DSP, and UI, following Python best practices.
+    \item \textbf{Configuration Management:} All audio and runtime parameters are centralized in \texttt{utils/config.py} using dataclasses, enabling easy adjustment and consistent access throughout the project.
+    \item \textbf{Thread Safe Ring Buffer:} The \texttt{audio/ringbuffer.py} module implements a lock-protected circular buffer for realtime audio streaming, giving safe concurrent access between threads.
+    \item \textbf{PyAudio Boilerplate:} The \texttt{audio/pyaudio\_io.py} module encapsulates device management, stream setup, and callback logic, abstracting away low-level PyAudio details.
+    \item \textbf{Recorder Module:} \texttt{audio/recorder.py} provides a simple, reusable class for background audio recording and playback, using OOP patterns and dataclasses for state management.
+\end{itemize}
+These modules are built with class boundaries, encapsulation, and minimal side effects, following common Python OOP and modularity standards.\\
+\\
+\textbf{Dependencies:} Dependencies required are as follows: (in \texttt{requirements.txt}):
+\begin{itemize}
+    \item \texttt{numpy} (\texttt{>=1.20.0})
+    \item \texttt{scipy} (\texttt{>=1.7.0})
+    \item \texttt{pyaudio} (\texttt{>=0.2.11})
+    \item \texttt{pyworld} (\texttt{>=0.3.0})
+\end{itemize}
+
+\pagebreak
+
+\section*{References}
+\begin{enumerate}
+    \item M. Morise, F. Yokomori, and K. Ozawa: WORLD: a vocoder-based high-quality speech synthesis system for real-time applications, IEICE transactions on information and systems, vol. E99-D, no. 7, pp. 1877-1884, 2016. \url{https://www.jstage.jst.go.jp/article/transinf/E99.D/7/E99.D_2015EDP7457/_article}
+    \item M. Morise: D4C, a band-aperiodicity estimator for high-quality speech synthesis, Speech Communication, vol. 84, pp. 57-65, Nov. 2016. \url{http://www.sciencedirect.com/science/article/pii/S0167639316300413}
+    \item M. Morise: Implementation of sequential real-time waveform generator for high-quality vocoder, in Proc. APSIPA ASC 2020, pp. 821-825, Online, Dec. 7-10, 2020. \url{http://www.apsipa.org/proceedings/2020/pdfs/0000821.pdf}
+    \item J. de Langen: Playing and Recording Sound in Python, Real Python, 2022. \url{https://realpython.com/playing-and-recording-sound-python/}
+    \item P. Acsany: Logging in Python, Real Python, 2025. \url{https://realpython.com/python-logging/}
+    \item Python Software Foundation: Logging facility for Python (Standard Library Documentation), 2025. \url{https://docs.python.org/3/library/logging.html}
+    \item S. N. Kim: Python Logging: An In-Depth Tutorial, Toptal, 2023. \url{https://www.toptal.com/python/python-logging-best-practices}
+\end{enumerate}
+
+
+\end{document}
+
+

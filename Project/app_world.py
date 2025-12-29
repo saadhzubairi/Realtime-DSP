@@ -534,7 +534,7 @@ class WorldVoiceChangerApp:
             
             # Update stats
             process_time = self.worker.process_time_ms
-            block_time = 200  # 200ms blocks
+            block_time = 500  # 200ms blocks
             
             self.stats_label.config(
                 text=f"Process time: {process_time:.1f} ms | Block size: {block_time} ms"

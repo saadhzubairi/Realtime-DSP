@@ -1,14 +1,3 @@
-"""
-Voice Transformer Application with Calibration
-================================================
-
-Two-tab application:
-1. Calibration Tab - Record Profile A (your voice) and Profile B (target voice)
-2. Live Tab - Real-time voice transformation using WORLD vocoder
-
-The app automatically calculates pitch shift and formant shift from the profiles.
-"""
-
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
@@ -18,43 +7,26 @@ from typing import Optional
 from pathlib import Path
 import os
 
-# Audio I/O
 from audio.ringbuffer import RingBuffer
-from audio.pyaudio_io import (
-    AudioDeviceManager,
-    AudioStream,
-    calculate_level_db,
-)
+from audio.pyaudio_io import AudioDeviceManager, AudioStream, calculate_level_db
 from audio.recorder import AudioRecorder, AudioPlayer, load_wav_as_float
 
-# DSP
 from dsp.world_vocoder import RealtimeWorldVocoder
-from dsp.voice_profile import VoiceProfile, extract_profile, save_profile, load_profile, list_profiles
+from dsp.voice_profile import VoiceProfile, extract_profile, save_profile, load_profile
 
-# Utils
+
 from utils.config import AudioConfig, get_profiles_directory
+from utils.logging_utils import audio_logger, dsp_logger, ui_log_buffer
 
 
 def calculate_transform_params(profile_a: VoiceProfile, profile_b: VoiceProfile) -> dict:
-    """
-    Calculate pitch and formant shift from two voice profiles.
-    
-    Args:
-        profile_a: Source voice profile (your voice)
-        profile_b: Target voice profile (voice to sound like)
-        
-    Returns:
-        dict with 'pitch_shift' (semitones) and 'formant_shift' (ratio)
-    """
-    # Pitch shift: ratio of median F0 values, converted to semitones
+    """Calculate pitch and formant shift from two voice profiles."""
     if profile_a.f0_median_hz > 0 and profile_b.f0_median_hz > 0:
         f0_ratio = profile_b.f0_median_hz / profile_a.f0_median_hz
-        pitch_shift = 12 * np.log2(f0_ratio)  # Convert ratio to semitones
+        pitch_shift = 12 * np.log2(f0_ratio)
     else:
         pitch_shift = 0.0
     
-    # Formant shift: ratio of average formant frequencies
-    # Using F1 and F2 as they're most perceptually important
     formants_a = []
     formants_b = []
     
@@ -73,7 +45,6 @@ def calculate_transform_params(profile_a: VoiceProfile, profile_b: VoiceProfile)
     else:
         formant_shift = 1.0
     
-    # Clamp to reasonable ranges
     pitch_shift = np.clip(pitch_shift, -12, 12)
     formant_shift = np.clip(formant_shift, 0.5, 2.0)
     
@@ -90,8 +61,8 @@ class WorldWorker(threading.Thread):
         self,
         input_buffer: RingBuffer,
         output_buffer: RingBuffer,
-        sample_rate: int = 96000,
-        block_size: int = 94000
+        sample_rate: int = 14400,
+        block_size: int = 1024
     ):
         super().__init__(daemon=True)
         
@@ -190,13 +161,11 @@ class CalibrationTab(ttk.Frame):
         self.config = config
         self.on_profiles_changed = on_profiles_changed
         
-        # Profile data
         self.profile_a: Optional[VoiceProfile] = None
         self.profile_b: Optional[VoiceProfile] = None
         self.audio_a: Optional[np.ndarray] = None
         self.audio_b: Optional[np.ndarray] = None
         
-        # Recorder
         self.recorder = AudioRecorder(
             sample_rate=config.sample_rate,
             channels=1,
@@ -220,7 +189,6 @@ class CalibrationTab(ttk.Frame):
         main = ttk.Frame(self, padding=15)
         main.pack(fill=tk.BOTH, expand=True)
         
-        # Title
         ttk.Label(
             main,
             text="Voice Calibration",
@@ -233,19 +201,15 @@ class CalibrationTab(ttk.Frame):
             foreground='gray'
         ).pack(pady=(0, 15))
         
-        # Two profile panels side by side
         profiles_frame = ttk.Frame(main)
         profiles_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Profile A panel
         self.panel_a = self._create_profile_panel(profiles_frame, "Profile A (Your Voice)", 'A')
         self.panel_a.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
         
-        # Profile B panel
         self.panel_b = self._create_profile_panel(profiles_frame, "Profile B (Target Voice)", 'B')
         self.panel_b.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
         
-        # Calculated parameters display
         params_frame = ttk.LabelFrame(main, text="Calculated Transform Parameters", padding=10)
         params_frame.pack(fill=tk.X, pady=15)
         
@@ -256,14 +220,12 @@ class CalibrationTab(ttk.Frame):
         )
         self.params_label.pack()
         
-        # Status
         self.status_var = tk.StringVar(value="Ready")
         ttk.Label(main, textvariable=self.status_var).pack()
     
     def _create_profile_panel(self, parent, title: str, profile_id: str) -> ttk.LabelFrame:
         panel = ttk.LabelFrame(parent, text=title, padding=10)
         
-        # Record button
         record_btn = ttk.Button(
             panel,
             text="🎤 Record (5 sec)",
@@ -272,17 +234,14 @@ class CalibrationTab(ttk.Frame):
         record_btn.pack(fill=tk.X, pady=5)
         setattr(self, f'record_btn_{profile_id.lower()}', record_btn)
         
-        # Status
         status = ttk.Label(panel, text="Not recorded", foreground='gray')
         status.pack(pady=5)
         setattr(self, f'status_{profile_id.lower()}', status)
         
-        # Info display
         info = ttk.Label(panel, text="", font=('Courier', 9))
         info.pack(pady=5)
         setattr(self, f'info_{profile_id.lower()}', info)
         
-        # Buttons
         btn_frame = ttk.Frame(panel)
         btn_frame.pack(fill=tk.X, pady=5)
         
@@ -317,11 +276,10 @@ class CalibrationTab(ttk.Frame):
         return panel
     
     def load_existing_profiles(self):
-        """Try to load existing profiles on startup. Call after UI is fully created."""
+        """Try to load existing profiles on startup."""
         self._init_complete = True
         profiles_dir = get_profiles_directory()
         
-        # Try to load profile_a
         profile_a_path = os.path.join(profiles_dir, 'profile_a')
         if os.path.exists(profile_a_path + '.json'):
             try:
@@ -330,7 +288,6 @@ class CalibrationTab(ttk.Frame):
             except Exception:
                 pass
         
-        # Try to load profile_b
         profile_b_path = os.path.join(profiles_dir, 'profile_b')
         if os.path.exists(profile_b_path + '.json'):
             try:
@@ -355,49 +312,43 @@ class CalibrationTab(ttk.Frame):
         btn.config(state='disabled')
         status.config(text="Recording...", foreground='red')
         self.status_var.set(f"Recording Profile {profile_id}...")
+        audio_logger.info(f"Start recording for Profile {profile_id}")
         
-        # Start recording in background
         def record_thread():
             try:
-                # Countdown
                 for i in range(3, 0, -1):
                     self.after(0, lambda x=i: status.config(text=f"Starting in {x}..."))
                     time.sleep(1)
                 
                 self.after(0, lambda: status.config(text="🔴 SPEAK NOW!", foreground='red'))
                 
-                # Record to WAV file
                 profiles_dir = get_profiles_directory()
                 os.makedirs(profiles_dir, exist_ok=True)
                 wav_path = os.path.join(profiles_dir, f'temp_{profile_id.lower()}.wav')
                 
                 self.recorder.start_recording(wav_path, duration_seconds=5.0)
                 
-                # Wait for recording to complete
                 while self.recorder.state.is_recording:
                     time.sleep(0.1)
                 
-                # Load the recorded audio (returns tuple of audio, sample_rate)
                 self.after(0, lambda: status.config(text="Processing...", foreground='blue'))
                 
                 audio, sr = load_wav_as_float(wav_path)
-                print(f"Loaded audio: {len(audio)} samples, {sr} Hz")
                 
                 if profile_id == 'A':
                     self.audio_a = audio
                     self.profile_a = extract_profile(audio, sr, name=f"Profile {profile_id}")
-                    print(f"Profile A: F0={self.profile_a.f0_median_hz:.1f} Hz, valid={self.profile_a.is_valid}")
                 else:
                     self.audio_b = audio
                     self.profile_b = extract_profile(audio, sr, name=f"Profile {profile_id}")
-                    print(f"Profile B: F0={self.profile_b.f0_median_hz:.1f} Hz, valid={self.profile_b.is_valid}")
                 
-                # Update UI
+                dsp_logger.info(f"Extracted profile for {profile_id}")
                 self.after(0, lambda: self._update_profile_display(profile_id))
                 self.after(0, self._update_params_display)
                 self.after(0, lambda: self.status_var.set("Recording complete!"))
-                
+                audio_logger.info(f"Recording and extraction complete for Profile {profile_id}")
             except Exception as e:
+                audio_logger.error(f"Recording failed for Profile {profile_id}: {e}")
                 self.after(0, lambda: messagebox.showerror("Error", f"Recording failed: {e}"))
                 self.after(0, lambda: status.config(text="Error", foreground='red'))
             finally:
@@ -516,7 +467,7 @@ class LiveTab(ttk.Frame):
         self.worker: Optional[WorldWorker] = None
         
         self._is_streaming = False
-        self._auto_params = None  # From calibration
+        self._auto_params = None
         
         self._create_widgets()
     
@@ -524,7 +475,6 @@ class LiveTab(ttk.Frame):
         main = ttk.Frame(self, padding=15)
         main.pack(fill=tk.BOTH, expand=True)
         
-        # Title
         ttk.Label(
             main,
             text="Live Voice Transformation",
@@ -537,7 +487,6 @@ class LiveTab(ttk.Frame):
             foreground='gray'
         ).pack(pady=(0, 15))
         
-        # Calibration status
         self.calib_frame = ttk.LabelFrame(main, text="Calibration Status", padding=10)
         self.calib_frame.pack(fill=tk.X, pady=5)
         
@@ -556,11 +505,9 @@ class LiveTab(ttk.Frame):
         )
         self.apply_calib_btn.pack(pady=5)
         
-        # Controls
         controls_frame = ttk.LabelFrame(main, text="Transform Controls", padding=10)
         controls_frame.pack(fill=tk.X, pady=5)
         
-        # Pitch shift
         pitch_row = ttk.Frame(controls_frame)
         pitch_row.pack(fill=tk.X, pady=5)
         ttk.Label(pitch_row, text="Pitch Shift:", width=12).pack(side=tk.LEFT)
@@ -575,7 +522,6 @@ class LiveTab(ttk.Frame):
         self.pitch_label = ttk.Label(pitch_row, text="0.0 st", width=10)
         self.pitch_label.pack(side=tk.LEFT)
         
-        # Formant shift
         formant_row = ttk.Frame(controls_frame)
         formant_row.pack(fill=tk.X, pady=5)
         ttk.Label(formant_row, text="Formant Shift:", width=12).pack(side=tk.LEFT)
@@ -590,14 +536,12 @@ class LiveTab(ttk.Frame):
         self.formant_label = ttk.Label(formant_row, text="1.00x", width=10)
         self.formant_label.pack(side=tk.LEFT)
         
-        # Bypass
         self.bypass_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             controls_frame, text="Bypass (passthrough)",
             variable=self.bypass_var, command=self._on_bypass_changed
         ).pack(anchor=tk.W, pady=5)
         
-        # Start/Stop
         btn_frame = ttk.Frame(main)
         btn_frame.pack(fill=tk.X, pady=15)
         
@@ -610,11 +554,9 @@ class LiveTab(ttk.Frame):
         self.status_label = ttk.Label(btn_frame, text="● Stopped", foreground='gray')
         self.status_label.pack(side=tk.LEFT, padx=20)
         
-        # Meters
         meters_frame = ttk.LabelFrame(main, text="Levels", padding=10)
         meters_frame.pack(fill=tk.X, pady=5)
         
-        # Input
         in_row = ttk.Frame(meters_frame)
         in_row.pack(fill=tk.X, pady=2)
         ttk.Label(in_row, text="Input:", width=8).pack(side=tk.LEFT)
@@ -623,7 +565,6 @@ class LiveTab(ttk.Frame):
         self.input_db = ttk.Label(in_row, text="-60 dB", width=8)
         self.input_db.pack(side=tk.LEFT)
         
-        # Output
         out_row = ttk.Frame(meters_frame)
         out_row.pack(fill=tk.X, pady=2)
         ttk.Label(out_row, text="Output:", width=8).pack(side=tk.LEFT)
@@ -632,7 +573,6 @@ class LiveTab(ttk.Frame):
         self.output_db = ttk.Label(out_row, text="-60 dB", width=8)
         self.output_db.pack(side=tk.LEFT)
         
-        # Stats
         self.stats_label = ttk.Label(meters_frame, text="Process: -- ms", foreground='gray')
         self.stats_label.pack(anchor=tk.W, pady=5)
     
@@ -670,12 +610,10 @@ class LiveTab(ttk.Frame):
             self.worker.set_bypass(self.bypass_var.get())
     
     def _start(self):
-        # Create buffers
         buffer_samples = self.config.sample_rate * 2
         self.input_buffer = RingBuffer(buffer_samples)
         self.output_buffer = RingBuffer(buffer_samples)
         
-        # Create audio stream
         self.audio_stream = AudioStream(
             self.device_manager,
             self.config,
@@ -683,7 +621,6 @@ class LiveTab(ttk.Frame):
             self.output_buffer
         )
         
-        # Create worker
         block_size = int(0.2 * self.config.sample_rate)
         self.worker = WorldWorker(
             self.input_buffer, self.output_buffer,
@@ -691,12 +628,10 @@ class LiveTab(ttk.Frame):
             block_size=block_size
         )
         
-        # Apply settings
         self.worker.set_pitch_shift(self.pitch_var.get())
         self.worker.set_formant_shift(self.formant_var.get())
         self.worker.set_bypass(self.bypass_var.get())
         
-        # Start
         self.worker.start()
         self.worker.start_processing()
         self.audio_stream.start(passthrough=False)
@@ -719,7 +654,7 @@ class LiveTab(ttk.Frame):
         self.status_label.config(text="● Stopped", foreground='gray')
     
     def update_meters(self):
-        """Update level meters (call periodically)."""
+        """Update level meters."""
         if self._is_streaming and self.worker:
             in_db = self.worker.input_level_db
             out_db = self.worker.output_level_db
@@ -743,7 +678,6 @@ class VoiceTransformerApp:
         self.root.geometry("700x600")
         self.root.minsize(650, 550)
         
-        # Audio
         self.device_manager = AudioDeviceManager()
         self.config = AudioConfig(sample_rate=16000, buffer_size=512)
         
@@ -752,11 +686,9 @@ class VoiceTransformerApp:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
     
     def _create_ui(self):
-        # Device selection at top
         device_frame = ttk.LabelFrame(self.root, text="Audio Devices", padding=5)
         device_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # Input
         in_row = ttk.Frame(device_frame)
         in_row.pack(fill=tk.X, pady=2)
         ttk.Label(in_row, text="Input:", width=8).pack(side=tk.LEFT)
@@ -764,13 +696,15 @@ class VoiceTransformerApp:
         self.input_var = tk.StringVar()
         input_devices = self.device_manager.get_input_devices()
         input_names = [d.name for d in input_devices]
-        self.input_combo = ttk.Combobox(in_row, textvariable=self.input_var, values=input_names, state='readonly', width=60)
+        self.input_combo = ttk.Combobox(
+            in_row, textvariable=self.input_var,
+            values=input_names, state='readonly', width=60
+        )
         self.input_combo.pack(side=tk.LEFT, padx=5)
         if input_names:
             self.input_combo.current(0)
         self.input_combo.bind('<<ComboboxSelected>>', self._on_input_changed)
         
-        # Output
         out_row = ttk.Frame(device_frame)
         out_row.pack(fill=tk.X, pady=2)
         ttk.Label(out_row, text="Output:", width=8).pack(side=tk.LEFT)
@@ -778,36 +712,37 @@ class VoiceTransformerApp:
         self.output_var = tk.StringVar()
         output_devices = self.device_manager.get_output_devices()
         output_names = [d.name for d in output_devices]
-        self.output_combo = ttk.Combobox(out_row, textvariable=self.output_var, values=output_names, state='readonly', width=60)
+        self.output_combo = ttk.Combobox(
+            out_row, textvariable=self.output_var,
+            values=output_names, state='readonly', width=60
+        )
         self.output_combo.pack(side=tk.LEFT, padx=5)
         if output_names:
             self.output_combo.current(0)
         self.output_combo.bind('<<ComboboxSelected>>', self._on_output_changed)
         
-        # Tabs
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        # Calibration tab
         self.calib_tab = CalibrationTab(
             self.notebook, self.config,
             on_profiles_changed=self._on_profiles_changed
         )
         self.notebook.add(self.calib_tab, text="📊 Calibration")
         
-        # Live tab
         self.live_tab = LiveTab(self.notebook, self.config, self.device_manager)
         self.notebook.add(self.live_tab, text="🎤 Live")
         
-        # Apply initial device selection
         self._on_input_changed(None)
         self._on_output_changed(None)
         
-        # Status bar
-        self.status = ttk.Label(self.root, text="Ready - Record voice profiles in Calibration tab", relief=tk.SUNKEN)
+        self.status = ttk.Label(
+            self.root,
+            text="Ready - Record voice profiles in Calibration tab",
+            relief=tk.SUNKEN
+        )
         self.status.pack(fill=tk.X, side=tk.BOTTOM)
         
-        # Load existing profiles now that UI is fully ready
         self.calib_tab.load_existing_profiles()
     
     def _on_input_changed(self, event):
@@ -829,7 +764,10 @@ class VoiceTransformerApp:
     def _on_profiles_changed(self, params: dict):
         """Called when calibration profiles are updated."""
         self.live_tab.set_calibration_params(params)
-        self.status.config(text=f"Calibration ready! Pitch: {params['pitch_shift']:+.1f} st, Formant: {params['formant_shift']:.2f}x")
+        self.status.config(
+            text=f"Calibration ready! Pitch: {params['pitch_shift']:+.1f} st, "
+                 f"Formant: {params['formant_shift']:.2f}x"
+        )
     
     def _schedule_update(self):
         self.live_tab.update_meters()
